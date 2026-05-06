@@ -1,5 +1,4 @@
 // Foundry VTT 13 macro for Pathfinder 1e spellcrafting UI
-// This first version builds the UI and selection logic only.
 
 (async () => {
   const actor = canvas.tokens.controlled[0]?.actor || game.user.character;
