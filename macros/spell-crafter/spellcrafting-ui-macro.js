@@ -2329,6 +2329,25 @@
     return [];
   }
 
+  function normalizeGeneratedActionsToArray(itemData) {
+    if (!itemData?.system || typeof itemData.system !== "object") return [];
+
+    const actions = getItemActionEntries(itemData);
+    if (!actions.length) {
+      setObjectPathValue(itemData, ["system", "actions"], []);
+      return [];
+    }
+
+    const normalizedActions = actions.map((action) => {
+      if (!action || typeof action !== "object") return action;
+      if (!action._id && action.id) action._id = action.id;
+      return action;
+    });
+
+    setObjectPathValue(itemData, ["system", "actions"], normalizedActions);
+    return normalizedActions;
+  }
+
   function buildGeneratedUseAction(actionId) {
     return {
       _id: actionId,
@@ -2354,7 +2373,7 @@
   function ensureGeneratedPrimaryAction(itemData) {
     if (!itemData?.system || typeof itemData.system !== "object") return null;
 
-    const existingActions = getItemActionEntries(itemData);
+    const existingActions = normalizeGeneratedActionsToArray(itemData);
     if (existingActions.length) {
       const primaryAction = existingActions[0];
       setObjectPathValue(primaryAction, ["name"], String(primaryAction.name || "").trim() || "Use");
@@ -2365,7 +2384,7 @@
     const actionId = foundry?.utils?.randomID ? foundry.utils.randomID(8) : Math.random().toString(36).slice(2, 10);
     const action = buildGeneratedUseAction(actionId);
 
-    setObjectPathValue(itemData, ["system", "actions"], { [actionId]: action });
+    setObjectPathValue(itemData, ["system", "actions"], [action]);
     return action;
   }
 
@@ -2906,9 +2925,12 @@
         .spellcrafting-costs .spellcrafting-school-value { width: 13ch; min-width: 13ch; text-align: left; font-size: 1.25rem; }
         .ui-dialog-buttonpane { display: none !important; }
         .spellcrafting-core-list { flex: 1 1 auto; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem; min-height: 0; padding-right: 0.2rem; }
-        .spellcrafting-core-item { display: grid; grid-template-columns: auto minmax(0, 1fr) max-content; align-items: center; gap: 0.7rem; background: rgba(236, 233, 225, 0.82); padding: 0.55rem 0.75rem; border-radius: 4px; color: #111; border: 1px solid #9f9787; font-size: 0.96rem; transition: background 0.12s ease, border-color 0.12s ease; }
+        .spellcrafting-core-item { display: grid; grid-template-columns: auto minmax(0, 1fr) max-content; align-items: center; gap: 0.65rem; background: rgba(236, 233, 225, 0.82); padding: 0.45rem 0.65rem; border-radius: 4px; color: #111; border: 1px solid #9f9787; font-size: 0.96rem; transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease; cursor: pointer; }
         .spellcrafting-core-item:hover { background: rgba(244, 240, 232, 0.9); border-color: #887d63; }
-        .spellcrafting-core-name { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+        .spellcrafting-core-item.selected { background: rgba(173, 220, 182, 0.98); border-color: #1f7a3d; box-shadow: inset 0 0 0 1px rgba(21, 100, 46, 0.34), 0 0 0 1px rgba(31, 122, 61, 0.28), 0 2px 6px rgba(24, 92, 44, 0.18); }
+        .spellcrafting-core-item input[type="radio"] { position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0; margin: 0; }
+        .spellcrafting-core-icon { width: 2rem; height: 2rem; object-fit: cover; border-radius: 4px; border: 1px solid rgba(89, 82, 66, 0.35); background: rgba(255, 255, 255, 0.75); box-shadow: 0 1px 2px rgba(0,0,0,0.12); }
+        .spellcrafting-core-name { min-width: 0; overflow-wrap: anywhere; word-break: break-word; font-weight: 700; }
         .spellcrafting-core-school { width: auto; text-align: left; justify-self: end; color: #5a554a; font-size: 0.85rem; font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; }
         .spellcrafting-augment-list { flex: 1 1 auto; overflow-y: auto; display: flex; flex-direction: column; gap: 0.65rem; min-height: 0; padding-right: 0.2rem; }
         .spellcrafting-augment-group { display: grid; gap: 0.45rem; }
@@ -2924,8 +2946,7 @@
         .spellcrafting-repeat-control button:disabled { background: #cfc8b7; border-color: #b4ac98; color: #8d877c; cursor: default; opacity: 0.75; }
         .spellcrafting-augment-entry .repeat-count { width: 2.6rem; min-width: 2.6rem; text-align: center; min-height: 1.8rem; padding: 0.2rem 0.25rem; font-size: 0.86rem; border: 1px solid #978d79; border-radius: 4px; background: #e3ddd1; }
         .spellcrafting-augment-entry .repeat-count:disabled { background: #d7d1c5; border-color: #b4ac98; color: #8e897f; }
-        .spellcrafting-augment-entry input[type="checkbox"],
-        .spellcrafting-core-item input[type="radio"] { margin-top: 0.15rem; }
+        .spellcrafting-augment-entry input[type="checkbox"] { margin-top: 0.15rem; }
         .spellcrafting-empty { color: #555; font-style: italic; font-size: 0.92rem; }
         @media (max-width: 1550px) {
           .spellcrafting-toolbar { grid-template-columns: minmax(250px, 1fr); align-items: start; }
@@ -3236,9 +3257,11 @@
       coreContainer.html(cores.map((core) => {
         const coreKey = getItemSourceKey(core);
         const checked = coreKey === state.selectedCoreId ? "checked" : "";
+        const selectedClass = checked ? " selected" : "";
         const titleText = escapeHtml(getCachedCoreHoverDescription(state, core));
         const schoolText = escapeHtml(getSpellSchool(core));
-        return `<label class="spellcrafting-core-item" title="${titleText}"><input type="radio" name="selectedCore" value="${coreKey}" ${checked} /><span class="spellcrafting-core-name">${escapeHtml(getCachedDisplaySpellName(state, core))}</span><span class="spellcrafting-core-school">${schoolText}</span></label>`;
+        const iconSrc = escapeHtml(core?.img || "icons/svg/mystery-man.svg");
+        return `<label class="spellcrafting-core-item${selectedClass}" title="${titleText}"><input type="radio" name="selectedCore" value="${coreKey}" ${checked} /><img class="spellcrafting-core-icon" src="${iconSrc}" alt="" loading="lazy" /><span class="spellcrafting-core-name">${escapeHtml(getCachedDisplaySpellName(state, core))}</span><span class="spellcrafting-core-school">${schoolText}</span></label>`;
       }).join(""));
       return;
     }
