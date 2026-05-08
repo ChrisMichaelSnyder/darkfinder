@@ -672,12 +672,310 @@
     return legacyPreparedCoreDataCache;
   }
 
+  function normalizeLegacyCasterText(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\bspellbook\b/g, " ")
+      .replace(/[^a-z0-9/+&,\-()\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function buildLegacyCasterNameVariants(value) {
+    const normalized = normalizeLegacyCasterText(value);
+    if (!normalized) return [];
+
+    const variants = new Set([normalized]);
+    const separators = /\s*(?:\/|,|&|\band\b|\bor\b|\(|\)|-)\s*/i;
+    normalized
+      .split(separators)
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .forEach((part) => variants.add(part));
+
+    return Array.from(variants);
+  }
+
+  function collectLegacyCasterNamesFromValue(value, names) {
+    if (value == null || value === "") return;
+    if (typeof value === "string" || typeof value === "number") {
+      const text = String(value).trim();
+      if (text) names.add(text);
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        if (Array.isArray(entry)) {
+          collectLegacyCasterNamesFromValue(entry[0], names);
+          continue;
+        }
+        if (entry && typeof entry === "object") {
+          collectLegacyCasterNamesFromValue(entry.class || entry.name || entry.tag || entry.value || entry[0], names);
+          continue;
+        }
+        collectLegacyCasterNamesFromValue(entry, names);
+      }
+      return;
+    }
+    if (typeof value === "object") {
+      const objectValues = Object.values(value);
+      const hasStructuredValues = objectValues.some((entry) => Array.isArray(entry) || (entry && typeof entry === "object"));
+      if (!hasStructuredValues) {
+        for (const key of Object.keys(value)) {
+          if (key) names.add(key);
+        }
+      }
+      for (const [key, entry] of Object.entries(value)) {
+        if (entry && typeof entry === "object" && ("class" in entry || "name" in entry || "tag" in entry || "value" in entry)) {
+          collectLegacyCasterNamesFromValue(entry.class || entry.name || entry.tag || entry.value, names);
+          continue;
+        }
+        if (Array.isArray(entry) || (entry && typeof entry === "object")) {
+          collectLegacyCasterNamesFromValue(entry, names);
+          continue;
+        }
+        if (key && typeof entry !== "string") names.add(key);
+      }
+    }
+  }
+
+  function parseLegacySpellLevelValue(value) {
+    if (value == null || value === "") return null;
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : null;
+    }
+    if (typeof value === "string") {
+      const match = value.trim().match(/^\d+/);
+      if (!match) return null;
+      const numeric = Number(match[0]);
+      return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : null;
+    }
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        const parsed = parseLegacySpellLevelValue(entry);
+        if (parsed != null) return parsed;
+      }
+      return null;
+    }
+    if (typeof value === "object") {
+      const explicitLevel = parseLegacySpellLevelValue(
+        value.level
+        ?? value.lvl
+        ?? value.spellLevel
+        ?? value.value,
+      );
+      if (explicitLevel != null) return explicitLevel;
+    }
+    return null;
+  }
+
+  function pushLegacyCastingEntry(entries, name, level) {
+    const normalizedName = String(name || "").trim();
+    if (!normalizedName) return;
+    entries.push({
+      name: normalizedName,
+      level: level == null ? null : Math.max(0, Math.floor(Number(level) || 0)),
+    });
+  }
+
+  function collectLegacyCastingEntriesFromValue(value, entries, fallbackName = "") {
+    if (value == null || value === "") return;
+
+    if (typeof value === "number") {
+      if (fallbackName) pushLegacyCastingEntry(entries, fallbackName, value);
+      return;
+    }
+
+    if (typeof value === "string") {
+      const text = value.trim();
+      if (!text) return;
+      const parsedLevel = parseLegacySpellLevelValue(text);
+      if (fallbackName && parsedLevel != null) {
+        pushLegacyCastingEntry(entries, fallbackName, parsedLevel);
+      } else if (parsedLevel == null) {
+        pushLegacyCastingEntry(entries, text, null);
+      }
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      if (fallbackName) {
+        const parsedLevel = parseLegacySpellLevelValue(value);
+        if (parsedLevel != null) {
+          pushLegacyCastingEntry(entries, fallbackName, parsedLevel);
+          return;
+        }
+      }
+
+      for (const entry of value) {
+        if (Array.isArray(entry)) {
+          const candidateName = entry.find((part) => typeof part === "string" && parseLegacySpellLevelValue(part) == null);
+          const candidateLevel = entry.find((part) => parseLegacySpellLevelValue(part) != null);
+          if (candidateName && candidateLevel != null) {
+            pushLegacyCastingEntry(entries, candidateName, parseLegacySpellLevelValue(candidateLevel));
+            continue;
+          }
+        }
+        collectLegacyCastingEntriesFromValue(entry, entries, fallbackName);
+      }
+      return;
+    }
+
+    if (typeof value !== "object") return;
+
+    const explicitName = value.class || value.name || value.tag || value.label || value.key || fallbackName;
+    const explicitLevel = parseLegacySpellLevelValue(
+      value.level
+      ?? value.lvl
+      ?? value.spellLevel
+      ?? value.value,
+    );
+    if (explicitName && explicitLevel != null) {
+      pushLegacyCastingEntry(entries, explicitName, explicitLevel);
+      return;
+    }
+
+    for (const [key, entry] of Object.entries(value)) {
+      if (entry == null || entry === "") continue;
+      if (typeof entry === "number") {
+        pushLegacyCastingEntry(entries, key, entry);
+        continue;
+      }
+      if (typeof entry === "string") {
+        const level = parseLegacySpellLevelValue(entry);
+        if (level != null) {
+          pushLegacyCastingEntry(entries, key, level);
+        } else {
+          pushLegacyCastingEntry(entries, entry, null);
+        }
+        continue;
+      }
+      collectLegacyCastingEntriesFromValue(entry, entries, key);
+    }
+  }
+
+  function getLegacySpellCastingEntries(spell) {
+    const entries = [];
+    const learnedAtSources = [
+      getObjectPath(spell, ["system", "learnedAt", "class"]),
+      getObjectPath(spell, ["system", "learnedAt", "classes"]),
+      getObjectPath(spell, ["system", "learnedAt"]),
+      getObjectPath(spell, ["data", "learnedAt", "class"]),
+      getObjectPath(spell, ["data", "learnedAt", "classes"]),
+      getObjectPath(spell, ["data", "learnedAt"]),
+      getObjectPath(spell, ["data", "data", "learnedAt", "class"]),
+      getObjectPath(spell, ["data", "data", "learnedAt", "classes"]),
+      getObjectPath(spell, ["data", "data", "learnedAt"]),
+    ];
+
+    for (const source of learnedAtSources) {
+      collectLegacyCastingEntriesFromValue(source, entries);
+    }
+
+    const deduped = new Map();
+    for (const entry of entries) {
+      const normalizedName = normalizeLegacyCasterText(entry.name);
+      if (!normalizedName) continue;
+      const existing = deduped.get(normalizedName);
+      if (!existing) {
+        deduped.set(normalizedName, { name: entry.name, level: entry.level });
+        continue;
+      }
+      if (existing.level == null && entry.level != null) {
+        existing.level = entry.level;
+        continue;
+      }
+      if (existing.level != null && entry.level != null) {
+        existing.level = Math.min(existing.level, entry.level);
+      }
+    }
+
+    return Array.from(deduped.values());
+  }
+
+  function getLegacySpellCasterClassNames(spell) {
+    const entryNames = getLegacySpellCastingEntries(spell).map((entry) => entry.name).filter(Boolean);
+    if (entryNames.length) return entryNames;
+
+    const names = new Set();
+    const learnedAtSources = [
+      getObjectPath(spell, ["system", "learnedAt", "class"]),
+      getObjectPath(spell, ["system", "learnedAt", "classes"]),
+      getObjectPath(spell, ["system", "learnedAt"]),
+      getObjectPath(spell, ["data", "learnedAt", "class"]),
+      getObjectPath(spell, ["data", "learnedAt", "classes"]),
+      getObjectPath(spell, ["data", "learnedAt"]),
+      getObjectPath(spell, ["data", "data", "learnedAt", "class"]),
+      getObjectPath(spell, ["data", "data", "learnedAt", "classes"]),
+      getObjectPath(spell, ["data", "data", "learnedAt"]),
+    ];
+
+    for (const source of learnedAtSources) {
+      collectLegacyCasterNamesFromValue(source, names);
+    }
+
+    return Array.from(names).filter(Boolean);
+  }
+
+  function getSelectedSpellbookDisplayName(actor, spellbookId, spellbooks) {
+    return spellbooks.find((book) => String(book?.id) === String(spellbookId))?.name
+      || getSpellbookNameFromAttributes(actor, spellbookId)
+      || String(spellbookId || "");
+  }
+
+  function doesLegacySpellMatchSpellbookName(spell, spellbookName) {
+    const spellbookVariants = buildLegacyCasterNameVariants(spellbookName);
+    if (!spellbookVariants.length) return true;
+
+    const classNames = getLegacySpellCasterClassNames(spell);
+    if (!classNames.length) return true;
+
+    const classVariants = classNames.flatMap((name) => buildLegacyCasterNameVariants(name));
+    return spellbookVariants.some((bookName) => (
+      classVariants.some((className) => (
+        className === bookName
+        || className.includes(bookName)
+        || bookName.includes(className)
+      ))
+    ));
+  }
+
+  function getLegacySpellLevelForSpellbookName(spell, spellbookName) {
+    const spellbookVariants = buildLegacyCasterNameVariants(spellbookName);
+    if (!spellbookVariants.length) return null;
+
+    const matchingLevels = [];
+    for (const entry of getLegacySpellCastingEntries(spell)) {
+      if (entry.level == null) continue;
+      const classVariants = buildLegacyCasterNameVariants(entry.name);
+      const isMatch = spellbookVariants.some((bookName) => (
+        classVariants.some((className) => (
+          className === bookName
+          || className.includes(bookName)
+          || bookName.includes(className)
+        ))
+      ));
+      if (isMatch) matchingLevels.push(entry.level);
+    }
+
+    if (!matchingLevels.length) return null;
+    return Math.min(...matchingLevels);
+  }
+
+  function getLegacySpellLevelForState(spell, state) {
+    if (!spell || !state?.spellbookId) return null;
+    const spellbookName = getSelectedSpellbookDisplayName(actor, state.spellbookId, spellbooks);
+    return getLegacySpellLevelForSpellbookName(spell, spellbookName);
+  }
+
   async function ensureSpellDataLoaded(actor, state) {
     if (!state.hasSanitizedSpellItems) {
       try {
         await sanitizeActorSpellbookReferences(actor, spellbooks);
+        await repairActorSpellActionArrays(actor);
       } catch (err) {
-        console.warn("Spellcrafting macro could not sanitize actor spellbook references.", err);
+        console.warn("Spellcrafting macro could not sanitize actor spell items.", err);
       }
       state.hasSanitizedSpellItems = true;
     }
@@ -715,10 +1013,11 @@
         if (state.useLegacyPreparedCores) {
           const legacyPreparedData = await loadLegacyPreparedCoreData();
           const preparedData = await loadPreparedSpellData();
+          const spellbookName = getSelectedSpellbookDisplayName(actor, state.spellbookId, spellbooks);
           setLoadedSpellData(
             state,
             cacheKey,
-            legacyPreparedData.cores,
+            legacyPreparedData.cores.filter((item) => doesLegacySpellMatchSpellbookName(item, spellbookName)),
             preparedData.augments.filter((item) => isAugmentSpell(item)),
           );
         } else {
@@ -908,7 +1207,7 @@
 
   function getCoreHoverSpellPointCost(core, state) {
     if (state?.preparationMode === "prepared" && state?.useLegacyPreparedCores) {
-      const spellLevel = Math.max(0, getSpellLevelValue(core));
+      const spellLevel = Math.max(0, getLegacySpellLevelForState(core, state) ?? getSpellLevelValue(core));
       return spellLevel > 0 ? (spellLevel * 2) - 1 : 0;
     }
     return getSpellPointCost(core);
@@ -1315,6 +1614,26 @@
       ["system", "save"],
       ["data", "savingThrow"],
     ], [/saving.*throw/i, /^save$/i]);
+  }
+
+  function actionHasAttackRoll(action) {
+    if (!action || typeof action !== "object") return false;
+
+    const actionType = String(action.actionType || "").trim().toLowerCase();
+    if (["attack", "mattack", "rattack", "msak", "rsak"].includes(actionType)) return true;
+
+    const attackFields = [
+      action.attackBonus,
+      action.attackName,
+      getObjectPath(action, ["formula"]),
+      getObjectPath(action, ["attack", "formula"]),
+      getObjectPath(action, ["attack", "bonus"]),
+    ];
+    if (attackFields.some((value) => String(value || "").trim() !== "")) return true;
+
+    return getObjectPath(action, ["touch"]) === true
+      || getObjectPath(action, ["ability", "attack"]) != null && String(getObjectPath(action, ["ability", "attack"]) || "").trim() !== ""
+      || getObjectPath(action, ["bab"]) != null && String(getObjectPath(action, ["bab"]) || "").trim() !== "";
   }
 
   function getSpellLevelValue(item) {
@@ -1819,19 +2138,22 @@
     };
   }
 
-  function getDescriptionSavingThrowValue(core) {
+  function getDescriptionSavingThrowValue(core, savingThrowOverride = "") {
+    const explicitSavingThrow = String(savingThrowOverride || "").trim();
+    if (explicitSavingThrow) return explicitSavingThrow;
+
     const parsedAttributes = parseSpellDescriptionAttributes(core);
     return String(parsedAttributes.savingThrow || getSpellSavingThrow(core) || "").trim();
   }
 
-  function shouldShowSpellAttackButton(core) {
-    const savingThrow = getDescriptionSavingThrowValue(core);
+  function shouldShowSpellAttackButton(core, savingThrowOverride = "") {
+    const savingThrow = getDescriptionSavingThrowValue(core, savingThrowOverride);
     return !!savingThrow && savingThrow.toLowerCase() !== "none";
   }
 
-  function buildSpellAttackButtonHtml(actor, spellbookId, core, spellName) {
-    if (!shouldShowSpellAttackButton(core)) return "";
-    const savingThrow = getDescriptionSavingThrowValue(core);
+  function buildSpellAttackButtonHtml(actor, spellbookId, core, spellName, savingThrowOverride = "") {
+    const savingThrow = getDescriptionSavingThrowValue(core, savingThrowOverride);
+    if (!shouldShowSpellAttackButton(core, savingThrow)) return "";
     return `
       <div class="spellcrafting-spell-attack-row" style="margin:0.05rem 0 0.95rem;">
         <span
@@ -1853,7 +2175,7 @@
     const core = getActiveItemById(state, state.selectedCoreId);
     if (!core) return 0;
     if (state.preparationMode === "prepared" && state.useLegacyPreparedCores) {
-      const spellLevel = Math.max(0, getSpellLevelValue(core));
+      const spellLevel = Math.max(0, getLegacySpellLevelForState(core, state) ?? getSpellLevelValue(core));
       return spellLevel > 0 ? (spellLevel * 2) - 1 : 0;
     }
     return getSpellPointCost(core);
@@ -2010,9 +2332,10 @@
   }
 
   function buildCastDescriptionHtml(actor, spellbookId, core, totalSP, details, spellName) {
+    const resolvedAttributes = getResolvedSpellAttributes(core, totalSP);
     const attributeText = buildCastAttributeText(core, totalSP);
     const descriptionBody = buildCastDescriptionText(core, totalSP);
-    const spellAttackButtonHtml = buildSpellAttackButtonHtml(actor, spellbookId, core, spellName);
+    const spellAttackButtonHtml = buildSpellAttackButtonHtml(actor, spellbookId, core, spellName, resolvedAttributes.savingThrow);
     const spellAttackSpacerHtml = spellAttackButtonHtml ? spellAttackButtonHtml : `<div class="spellcrafting-spell-attack-spacer" style="height:0.45rem;"></div>`;
     const appliedAugmentsHtml = buildAppliedAugmentHtml(details);
     const attributeHtml = attributeText.replace(/\n/g, "<br>");
@@ -2036,7 +2359,7 @@
     const descriptionBody = buildCastDescriptionText(core, totalSP);
     const spellAttackButtonHtml = options.includeSpellAttackButton === false
       ? ""
-      : buildSpellAttackButtonHtml(actor, spellbookId, core, spellName || resolvedAttributes.name);
+      : buildSpellAttackButtonHtml(actor, spellbookId, core, spellName || resolvedAttributes.name, resolvedAttributes.savingThrow);
     const spellAttackSpacerHtml = spellAttackButtonHtml ? spellAttackButtonHtml : `<div class="spellcrafting-spell-attack-spacer" style="height:0.45rem;"></div>`;
     const appliedAugmentsHtml = buildAppliedAugmentHtml(details);
     const attributeHtml = attributeText.replace(/\n/g, "<br>");
@@ -2152,19 +2475,21 @@
     delete itemData.folder;
     delete itemData.sort;
     delete itemData.pack;
+    delete itemData.actions;
 
     itemData.name = resolvedAttributes.name;
     itemData.type = "spell";
     itemData.img = coreSource?.img || itemData.img || "icons/svg/book.svg";
     itemData.flags = itemData.flags && typeof itemData.flags === "object" ? itemData.flags : {};
     itemData.system = itemData.system && typeof itemData.system === "object" ? itemData.system : {};
+    const sourceActionEntries = getItemActionEntries(itemData).map((action) => deepCloneGeneratedData(action));
     if (core?.uuid) {
       setObjectPathValue(itemData, ["flags", FLAG_SCOPE, "sourceUuid"], String(core.uuid));
     }
     sanitizeGeneratedSpellTemplate(itemData, totalSP);
     ensureGeneratedPrimaryAction(itemData);
     setObjectPathValue(itemData, ["system", "description", "value"], buildPreparedSpellDescriptionHtml(actor, canonicalSpellbookKey, core, totalSP, augmentDetails, resolvedAttributes.name));
-    populateSpellItemAttributes(itemData, resolvedAttributes, totalSP);
+    populateSpellItemAttributes(itemData, resolvedAttributes, totalSP, sourceActionEntries);
     assignSpellbookReference(actor, itemData, canonicalSpellbookKey, spellbookName);
 
     return {
@@ -2179,83 +2504,10 @@
   }
 
   async function createSpellChatFromTemporaryItem(actor, itemData, fallbackChatData) {
-    let createdSpell = null;
-    try {
-      [createdSpell] = await actor.createEmbeddedDocuments("Item", [itemData]);
-      if (!createdSpell) throw new Error("Temporary spell item could not be created.");
-
-      const token = actor?.token ?? null;
-      const defaultAction = createdSpell.defaultAction || getItemActionEntries(createdSpell)?.[0] || null;
-      const castLabels = (() => {
-        try {
-          return createdSpell.getLabels({
-            actionId: defaultAction?.id || defaultAction?._id || null,
-            rollData: defaultAction?.getRollData?.() || createdSpell.getRollData?.() || {},
-          });
-        } catch (err) {
-          return { error: err?.message || String(err) };
-        }
-      })();
-
-      console.group("Spellcrafting Temporary Cast Item");
-      console.log("Item:", {
-        id: createdSpell.id,
-        name: createdSpell.name,
-        type: createdSpell.type,
-      });
-      console.log("Default action:", defaultAction ? {
-        id: defaultAction.id || defaultAction._id || null,
-        name: defaultAction.name || null,
-        actionType: defaultAction.actionType || null,
-        activation: defaultAction.activation,
-        save: defaultAction.save,
-        duration: defaultAction.duration,
-      } : null);
-      console.log("Item labels:", castLabels);
-
-      if (typeof createdSpell.displayCard === "function") {
-        console.log("Cast branch:", "createdSpell.displayCard");
-        console.groupEnd();
-        await createdSpell.displayCard(undefined, { token });
-        return true;
-      }
-
-      if (defaultAction?.use && typeof defaultAction.use === "function") {
-        console.log("Cast branch:", "defaultAction.use");
-        console.groupEnd();
-        await defaultAction.use({ token, skipDialog: true });
-        return true;
-      }
-
-      if (typeof createdSpell.use === "function") {
-        console.log("Cast branch:", "createdSpell.use");
-        console.groupEnd();
-        await createdSpell.use({ actionId: defaultAction?.id, token, skipDialog: true });
-        return true;
-      }
-
-      if (typeof createdSpell.roll === "function") {
-        console.log("Cast branch:", "createdSpell.roll");
-        console.groupEnd();
-        await createdSpell.roll();
-        return true;
-      }
-
-      console.log("Cast branch:", "fallback ChatMessage.create");
-      console.groupEnd();
-      const chatData = { ...fallbackChatData };
-      applyChatRollMode(chatData);
-      await ChatMessage.create(chatData);
-      return true;
-    } finally {
-      if (createdSpell?.id) {
-        try {
-          await actor.deleteEmbeddedDocuments("Item", [createdSpell.id]);
-        } catch (err) {
-          console.warn("Spellcrafting macro could not delete temporary cast item.", err);
-        }
-      }
-    }
+    const chatData = { ...fallbackChatData };
+    applyChatRollMode(chatData);
+    await ChatMessage.create(chatData);
+    return true;
   }
 
   function toSystemSchoolKey(value) {
@@ -2329,6 +2581,42 @@
     return [];
   }
 
+  function deepCloneSpellcraftingData(value) {
+    if (value == null) return value;
+    if (foundry?.utils?.deepClone) return foundry.utils.deepClone(value);
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function normalizeArrayLikeValue(value, fallback = []) {
+    if (Array.isArray(value)) return value;
+    if (value instanceof Set) return Array.from(value);
+    if (value && typeof value === "object") {
+      return Object.values(value).filter((entry) => entry != null);
+    }
+    if (value == null) return [...fallback];
+    return [...fallback];
+  }
+
+  function normalizeActionSourceData(action) {
+    if (!action || typeof action !== "object") return action;
+
+    const normalized = deepCloneSpellcraftingData(action);
+    if (!normalized._id && normalized.id) normalized._id = normalized.id;
+
+    setObjectPathValue(normalized, ["conditionals"], normalizeArrayLikeValue(normalized.conditionals));
+    setObjectPathValue(normalized, ["damage", "parts"], normalizeArrayLikeValue(getObjectPath(normalized, ["damage", "parts"])));
+    setObjectPathValue(normalized, ["damage", "critParts"], normalizeArrayLikeValue(getObjectPath(normalized, ["damage", "critParts"])));
+    setObjectPathValue(normalized, ["damage", "nonCritParts"], normalizeArrayLikeValue(getObjectPath(normalized, ["damage", "nonCritParts"])));
+    setObjectPathValue(normalized, ["extraAttacks", "manual"], normalizeArrayLikeValue(getObjectPath(normalized, ["extraAttacks", "manual"])));
+    setObjectPathValue(normalized, ["notes", "attack"], normalizeArrayLikeValue(getObjectPath(normalized, ["notes", "attack"])));
+    setObjectPathValue(normalized, ["notes", "effect"], normalizeArrayLikeValue(getObjectPath(normalized, ["notes", "effect"])));
+    setObjectPathValue(normalized, ["notes", "footer"], normalizeArrayLikeValue(getObjectPath(normalized, ["notes", "footer"])));
+    setObjectPathValue(normalized, ["specialActions"], normalizeArrayLikeValue(getObjectPath(normalized, ["specialActions"])));
+    setObjectPathValue(normalized, ["material", "addon"], normalizeArrayLikeValue(getObjectPath(normalized, ["material", "addon"])));
+
+    return normalized;
+  }
+
   function normalizeGeneratedActionsToArray(itemData) {
     if (!itemData?.system || typeof itemData.system !== "object") return [];
 
@@ -2340,12 +2628,38 @@
 
     const normalizedActions = actions.map((action) => {
       if (!action || typeof action !== "object") return action;
-      if (!action._id && action.id) action._id = action.id;
-      return action;
+      return normalizeActionSourceData(action);
     });
 
     setObjectPathValue(itemData, ["system", "actions"], normalizedActions);
     return normalizedActions;
+  }
+
+  function getNormalizedActionArrayForUpdate(item) {
+    const actions = getObjectPath(item, ["system", "actions"]);
+    if (actions == null) return null;
+    return getItemActionEntries(item)
+      .map((action) => normalizeActionSourceData(action))
+      .filter((action) => action && typeof action === "object");
+  }
+
+  async function repairActorSpellActionArrays(actor) {
+    if (!actor?.items?.length) return 0;
+
+    const updates = [];
+    for (const item of actor.items) {
+      if (item?.type !== "spell") continue;
+      const normalizedActions = getNormalizedActionArrayForUpdate(item);
+      if (normalizedActions == null) continue;
+      updates.push({
+        _id: item.id,
+        "system.actions": normalizedActions,
+      });
+    }
+
+    if (!updates.length) return 0;
+    await actor.updateEmbeddedDocuments("Item", updates);
+    return updates.length;
   }
 
   function buildGeneratedUseAction(actionId) {
@@ -2404,6 +2718,8 @@
 
   function clearGeneratedActionRollData(action) {
     setObjectPathValue(action, ["attackBonus"], "");
+    setObjectPathValue(action, ["attackName"], "");
+    setObjectPathValue(action, ["bab"], "");
     setObjectPathValue(action, ["formula"], "");
     setObjectPathValue(action, ["damage", "parts"], []);
     setObjectPathValue(action, ["damage", "value"], "");
@@ -2430,24 +2746,209 @@
     setObjectPathValue(action, ["conditionals"], []);
   }
 
+  function deepCloneGeneratedData(value) {
+    if (value == null) return value;
+    if (foundry?.utils?.deepClone) return foundry.utils.deepClone(value);
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function rewriteSpellPointFormulaText(value) {
+    return String(value || "").replace(/@cl\b/gi, "@item.spellPointCost");
+  }
+
+  function evaluateSpellcraftingMathFormula(formula, totalSP) {
+    const rewrittenFormula = rewriteSpellPointFormulaText(formula)
+      .replace(/@item\.system\.spellPointCost\b/gi, String(totalSP))
+      .replace(/@item\.spellPointCost\b/gi, String(totalSP))
+      .replace(/@spellPointCost\b/gi, String(totalSP))
+      .replace(/@sp\b/gi, String(totalSP));
+    const sanitizedFormula = String(rewrittenFormula || "").trim();
+    if (!sanitizedFormula) return 0;
+    if (!/^[0-9+\-*/%().,\s_a-zA-Z]+$/.test(sanitizedFormula)) return 0;
+
+    try {
+      const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+      const evaluator = Function(
+        "abs",
+        "ceil",
+        "clamp",
+        "floor",
+        "max",
+        "min",
+        "pow",
+        "round",
+        "sqrt",
+        "trunc",
+        `"use strict"; return (${sanitizedFormula});`,
+      );
+      const result = evaluator(
+        Math.abs,
+        Math.ceil,
+        clamp,
+        Math.floor,
+        Math.max,
+        Math.min,
+        Math.pow,
+        Math.round,
+        Math.sqrt,
+        Math.trunc,
+      );
+      const numeric = Number(result);
+      return Number.isFinite(numeric) ? numeric : 0;
+    } catch (err) {
+      console.warn("Spellcrafting macro could not evaluate an extra attack formula.", {
+        formula,
+        rewrittenFormula: sanitizedFormula,
+        totalSP,
+        error: err,
+      });
+      return 0;
+    }
+  }
+
+  function getExtraAttackCountFromAction(action, totalSP) {
+    const rawFormula = getObjectPath(action, ["extraAttacks", "formula", "count"]);
+    if (rawFormula == null || rawFormula === "") return 0;
+    const numeric = Math.floor(evaluateSpellcraftingMathFormula(rawFormula, totalSP));
+    return Math.max(0, numeric);
+  }
+
+  function extractActionDamagePartTemplate(action) {
+    const damageParts = normalizeArrayLikeValue(getObjectPath(action, ["damage", "parts"]));
+    const firstPart = damageParts.find((part) => part != null);
+    if (firstPart != null) {
+      return deepCloneGeneratedData(firstPart);
+    }
+
+    const damage = getObjectPath(action, ["damage"]);
+    if (!damage || typeof damage !== "object") return null;
+
+    const formula = String(
+      damage.formula
+      ?? damage.value
+      ?? "",
+    ).trim();
+    if (!formula) return null;
+
+    const damageType = normalizeArrayLikeValue(
+      damage.types
+      ?? damage.type
+      ?? damage.damageType
+      ?? [],
+    );
+
+    if (damageType.length <= 1) {
+      return [formula, damageType[0] || ""];
+    }
+
+    return {
+      formula,
+      types: damageType,
+    };
+  }
+
+  function duplicateAttackRollDamageInstances(action, originalAction, totalSP) {
+    if (!actionHasAttackRoll(originalAction)) return;
+
+    const extraAttackCount = getExtraAttackCountFromAction(originalAction, totalSP);
+    if (!extraAttackCount) return;
+
+    const templatePart = extractActionDamagePartTemplate(originalAction);
+    if (templatePart == null) return;
+
+    const existingParts = normalizeArrayLikeValue(getObjectPath(action, ["damage", "parts"]));
+    const nextParts = [...existingParts];
+    for (let index = 0; index < extraAttackCount; index += 1) {
+      nextParts.push(deepCloneGeneratedData(templatePart));
+    }
+    setObjectPathValue(action, ["damage", "parts"], nextParts);
+  }
+
+  function rewriteSpellPointFormulaData(value) {
+    if (value == null) return value;
+    if (typeof value === "string") return rewriteSpellPointFormulaText(value);
+    if (Array.isArray(value)) return value.map((entry) => rewriteSpellPointFormulaData(entry));
+    if (typeof value === "object") {
+      const result = {};
+      for (const [key, entry] of Object.entries(value)) {
+        result[key] = rewriteSpellPointFormulaData(entry);
+      }
+      return result;
+    }
+    return value;
+  }
+
+  function getGeneratedActionDamageSnapshot(action) {
+    return {
+      damage: deepCloneGeneratedData(getObjectPath(action, ["damage"])),
+      healing: deepCloneGeneratedData(getObjectPath(action, ["healing"])),
+      resourceFormula: deepCloneGeneratedData(getObjectPath(action, ["resourceFormula"])),
+    };
+  }
+
+  function restoreGeneratedActionDamageData(action, snapshot) {
+    if (!snapshot) return;
+    if (snapshot.damage != null) {
+      setObjectPathValue(action, ["damage"], rewriteSpellPointFormulaData(snapshot.damage));
+    }
+    if (snapshot.healing != null) {
+      setObjectPathValue(action, ["healing"], rewriteSpellPointFormulaData(snapshot.healing));
+    }
+    if (snapshot.resourceFormula != null) {
+      setObjectPathValue(action, ["resourceFormula"], rewriteSpellPointFormulaData(snapshot.resourceFormula));
+    }
+  }
+
+  function setGeneratedActionSpellPointAliases(action, totalSP) {
+    setObjectPathValue(action, ["sp"], totalSP);
+    setObjectPathValue(action, ["spellPointCost"], totalSP);
+    setObjectPathValue(action, ["uses", "spellPointCost"], String(totalSP));
+  }
+
+  function applyGeneratedActionClassification(action, saveType = "") {
+    const normalizedSaveType = String(saveType || "").trim().toLowerCase();
+    const actionType = normalizedSaveType ? "save" : "spell";
+
+    setObjectPathValue(action, ["actionType"], actionType);
+    setObjectPathValue(action, ["attackBonus"], "");
+    setObjectPathValue(action, ["attackName"], "");
+    setObjectPathValue(action, ["bab"], "");
+    setObjectPathValue(action, ["touch"], false);
+    setObjectPathValue(action, ["nonlethal"], false);
+    setObjectPathValue(action, ["naturalAttack", "primary"], false);
+    setObjectPathValue(action, ["naturalAttack", "secondary", "attackBonus"], "");
+    setObjectPathValue(action, ["naturalAttack", "secondary", "damageMult"], 0.5);
+    setObjectPathValue(action, ["ability", "attack"], "");
+    setObjectPathValue(action, ["ability", "critMult"], 1);
+    setObjectPathValue(action, ["ability", "critRange"], 0);
+    setObjectPathValue(action, ["extraAttacks", "type"], "");
+    setObjectPathValue(action, ["extraAttacks", "formula", "count"], "");
+    setObjectPathValue(action, ["extraAttacks", "formula", "bonus"], "");
+    setObjectPathValue(action, ["extraAttacks", "formula", "label"], "");
+    setObjectPathValue(action, ["extraAttacks", "manual"], []);
+    setObjectPathValue(action, ["maneuverType"], null);
+  }
+
   function syncGeneratedActionAttributes(itemData, totalSP) {
     const primaryAction = ensureGeneratedPrimaryAction(itemData);
     const actions = getItemActionEntries(itemData);
     if (!actions.length && !primaryAction) return;
 
     for (const action of actions) {
+      const damageSnapshot = getGeneratedActionDamageSnapshot(action);
       setObjectPathValue(action, ["name"], "Use");
-      setObjectPathValue(action, ["actionType"], "spell");
+      applyGeneratedActionClassification(action);
       setObjectPathValue(action, ["activation", "cost"], null);
       setObjectPathValue(action, ["activation", "type"], "other");
       setObjectPathValue(action, ["activation", "unchained", "cost"], null);
       setObjectPathValue(action, ["activation", "unchained", "type"], "other");
-      setObjectPathValue(action, ["uses", "spellPointCost"], String(totalSP));
+      setGeneratedActionSpellPointAliases(action, totalSP);
       setObjectPathValue(action, ["target", "value"], "");
       setObjectPathValue(action, ["range", "value"], "");
       setObjectPathValue(action, ["range", "units"], "");
       clearGeneratedActionTemplateData(action);
       clearGeneratedActionRollData(action);
+      restoreGeneratedActionDamageData(action, damageSnapshot);
       setObjectPathValue(action, ["duration", "value"], "None");
       setObjectPathValue(action, ["duration", "units"], "spec");
       setObjectPathValue(action, ["duration", "concentration"], false);
@@ -2578,7 +3079,7 @@
     setObjectPathValue(itemData, ["flags", "spellbook"], { ...templatePlainFlag, id: fallbackKey, name: spellbookName });
   }
 
-  function populateSpellItemAttributes(itemData, resolvedAttributes, totalSP) {
+  function populateSpellItemAttributes(itemData, resolvedAttributes, totalSP, sourceActionEntries = []) {
     const systemSchoolKey = toSystemSchoolKey(resolvedAttributes.school);
     const saveDescription = String(resolvedAttributes.savingThrow || "").trim();
     const saveType = toSystemSaveType(saveDescription);
@@ -2588,6 +3089,7 @@
     const spellLevel = Math.max(0, Math.ceil(Number(totalSP || 0) / 2));
     setObjectPathValue(itemData, ["system", "spellPointCost"], totalSP);
     setObjectPathValue(itemData, ["system", "spCost"], totalSP);
+    setObjectPathValue(itemData, ["system", "sp"], totalSP);
     setObjectPathValue(itemData, ["system", "slotCost"], totalSP);
     setObjectPathValue(itemData, ["system", "spellPoints", "cost"], totalSP);
     setObjectPathValue(itemData, ["system", "level"], spellLevel);
@@ -2606,15 +3108,22 @@
     setObjectPathValue(itemData, ["system", "save", "type"], saveType);
     setObjectPathValue(itemData, ["system", "uses", "autoDeductChargesCost"], "");
 
-    for (const action of getItemActionEntries(itemData)) {
+    const generatedActions = getItemActionEntries(itemData);
+    for (let index = 0; index < generatedActions.length; index += 1) {
+      const action = generatedActions[index];
+      const originalAction = deepCloneGeneratedData(sourceActionEntries[index] || action);
+      const damageSnapshot = getGeneratedActionDamageSnapshot(action);
       setObjectPathValue(action, ["name"], "Use");
-      setObjectPathValue(action, ["actionType"], activationData.actionType);
+      applyGeneratedActionClassification(action, saveType);
       setObjectPathValue(action, ["activation", "cost"], activationData.cost);
       setObjectPathValue(action, ["activation", "type"], activationData.type);
       setObjectPathValue(action, ["activation", "unchained", "cost"], activationData.cost);
       setObjectPathValue(action, ["activation", "unchained", "type"], activationData.type);
       clearGeneratedActionTemplateData(action);
       clearGeneratedActionRollData(action);
+      restoreGeneratedActionDamageData(action, damageSnapshot);
+      duplicateAttackRollDamageInstances(action, originalAction, totalSP);
+      setGeneratedActionSpellPointAliases(action, totalSP);
       setObjectPathValue(action, ["duration", "value"], durationData.value);
       setObjectPathValue(action, ["duration", "units"], durationData.units);
       setObjectPathValue(action, ["duration", "concentration"], durationData.concentration);
@@ -2848,43 +3357,51 @@
       await ChatMessage.create(chatData);
     };
 
-    if (globalThis.pf1SpellcraftingAttackHookRegistered) return;
-    globalThis.pf1SpellcraftingAttackHookRegistered = true;
+    if (globalThis.pf1SpellcraftingAttackHookId != null) {
+      Hooks.off("renderChatMessage", globalThis.pf1SpellcraftingAttackHookId);
+      Hooks.off("renderChatMessageHTML", globalThis.pf1SpellcraftingAttackHookId);
+      globalThis.pf1SpellcraftingAttackHookId = null;
+    }
 
-    Hooks.on("renderChatMessage", (message, html) => {
-      const buttons = html.find(".spellcrafting-spell-attack-button");
+    globalThis.pf1SpellcraftingAttackHookId = Hooks.on("renderChatMessageHTML", (message, element) => {
+      const root = element instanceof HTMLElement ? element : null;
+      if (!root) return;
+
+      const buttons = root.querySelectorAll(".spellcrafting-spell-attack-button");
       if (!buttons.length) return;
 
-      buttons.each((_, element) => {
-        const button = $(element);
-        const isCreator = String(message.user?.id || message.user) === String(game.user.id);
-        button.attr("aria-disabled", isCreator ? "false" : "true");
-        button.attr("data-disabled", isCreator ? "false" : "true");
-        button.css({
-          opacity: isCreator ? "1" : "0.6",
-          cursor: isCreator ? "pointer" : "not-allowed",
-        });
-        if (!isCreator) {
-          button.attr("title", "Only the player who created this chat card can use Spell Attack.");
-        }
-      });
+      const messageAuthorId = String(message.author?.id || "");
+      const isCreator = messageAuthorId === String(game.user.id);
 
-      html.off("click.spellcrafting-attack", ".spellcrafting-spell-attack-button");
-      html.on("click.spellcrafting-attack", ".spellcrafting-spell-attack-button", async (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (event.currentTarget.dataset.disabled === "true") return;
-        await globalThis.pf1SpellcraftingHandleAttackButton(event.currentTarget);
-      });
-      html.off("keydown.spellcrafting-attack", ".spellcrafting-spell-attack-button");
-      html.on("keydown.spellcrafting-attack", ".spellcrafting-spell-attack-button", async (event) => {
-        if (event.key !== "Enter" && event.key !== " ") return;
-        event.preventDefault();
-        event.stopPropagation();
-        if (event.currentTarget.dataset.disabled === "true") return;
-        await globalThis.pf1SpellcraftingHandleAttackButton(event.currentTarget);
-      });
+      for (const button of buttons) {
+        button.setAttribute("aria-disabled", isCreator ? "false" : "true");
+        button.setAttribute("data-disabled", isCreator ? "false" : "true");
+        button.style.opacity = isCreator ? "1" : "0.6";
+        button.style.cursor = isCreator ? "pointer" : "not-allowed";
+
+        if (!isCreator) {
+          button.setAttribute("title", "Only the player who created this chat card can use Spell Attack.");
+        } else {
+          button.removeAttribute("title");
+        }
+
+        button.onclick = async (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (button.dataset.disabled === "true") return;
+          await globalThis.pf1SpellcraftingHandleAttackButton(button);
+        };
+
+        button.onkeydown = async (event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          event.stopPropagation();
+          if (button.dataset.disabled === "true") return;
+          await globalThis.pf1SpellcraftingHandleAttackButton(button);
+        };
+      }
     });
+    globalThis.pf1SpellcraftingAttackHookRegistered = true;
   }
 
   function buildDialogContent(spellbooks, state, actor) {
