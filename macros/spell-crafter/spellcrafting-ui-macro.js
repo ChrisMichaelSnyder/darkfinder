@@ -1202,9 +1202,15 @@
       .trim();
   }
 
+  function removeCoreAugmentsSection(text) {
+    return String(text || "")
+      .replace(/(?:^|\n)\s*Core Augments?:[\s\S]*$/i, "")
+      .trim();
+  }
+
   function getCoreDescriptionWithoutAugments(core) {
     const plaintext = stripHtmlTags(getSpellDescription(core));
-    return normalizeDisplayedSpellText(plaintext.replace(/\n?\s*Core Augments?:[\s\S]*$/i, "").trim());
+    return normalizeDisplayedSpellText(removeCoreAugmentsSection(plaintext));
   }
 
   function descriptionHasStructuredSpellAttributes(description) {
@@ -1301,6 +1307,13 @@
       entries.push({ cost, repeatable, title, description: descriptionText, raw: match[0].trim() });
     }
     return entries;
+  }
+
+  function getSpellAugmentLimitation(description) {
+    if (!description) return "";
+    const plaintext = stripHtmlTags(description);
+    const match = plaintext.match(/(?:^|\n)\s*Limitation:\s*([^\n\r]+)/i);
+    return match?.[1] ? normalizeDisplayedSpellText(match[1].trim()) : "";
   }
 
   function getSpellbookOptionHtml(book, selectedId) {
@@ -2215,20 +2228,6 @@
       .trim();
   }
 
-  function buildCastAttributeText(core, totalSP) {
-    const resolvedAttributes = getResolvedSpellAttributes(core, totalSP);
-    const lines = [
-      `<strong>SP Cost:</strong> ${escapeHtml(resolvedAttributes.spCost)}`,
-      `<strong>School:</strong> ${escapeHtml(resolvedAttributes.school)}`,
-      `<strong>Casting Time:</strong> ${escapeHtml(resolvedAttributes.castingTime)}`,
-      `<strong>Range:</strong> ${escapeHtml(resolvedAttributes.range)}`,
-      `<strong>Target:</strong> ${escapeHtml(resolvedAttributes.target)}`,
-      `<strong>Duration:</strong> ${escapeHtml(resolvedAttributes.duration)}`,
-      `<strong>Saving Throw:</strong> ${escapeHtml(resolvedAttributes.savingThrow)}`,
-    ];
-    return lines.join("\n");
-  }
-
   function buildPreparedAttributeText(core, totalSP) {
     const resolvedAttributes = getResolvedSpellAttributes(core, totalSP);
     const lines = [
@@ -2341,12 +2340,12 @@
     `;
   }
 
-  function buildCastDescriptionText(core, totalSP) {
+  function buildCastDescriptionText(core) {
     let trimmed = getCoreDescriptionWithoutAugments(core);
     const descriptionMatch = trimmed.match(/(?:^|\n)\s*Description:\s*/i);
     if (descriptionMatch) {
       const start = (descriptionMatch.index || 0) + descriptionMatch[0].length;
-      return trimmed.slice(start).trim();
+      return removeCoreAugmentsSection(trimmed.slice(start));
     }
 
     const strippedLines = trimmed
@@ -2354,35 +2353,13 @@
       .map((line) => line.trim())
       .filter(Boolean)
       .filter((line) => !/^(Name|SP Cost|School|Casting Time|Range|Target|Duration|Saving Throw)\s*:/i.test(line));
-    return strippedLines.join("\n").trim();
-  }
-
-  function buildCastDescriptionHtml(actor, spellbookId, core, totalSP, details, spellName) {
-    const resolvedAttributes = getResolvedSpellAttributes(core, totalSP);
-    const attributeText = buildCastAttributeText(core, totalSP);
-    const descriptionBody = buildCastDescriptionText(core, totalSP);
-    const spellAttackButtonHtml = buildSpellAttackButtonHtml(actor, spellbookId, core, spellName, resolvedAttributes.savingThrow);
-    const spellAttackSpacerHtml = spellAttackButtonHtml ? spellAttackButtonHtml : `<div class="spellcrafting-spell-attack-spacer" style="height:0.45rem;"></div>`;
-    const appliedAugmentsHtml = buildAppliedAugmentHtml(details);
-    const attributeHtml = attributeText.replace(/\n/g, "<br>");
-    const descriptionHtml = descriptionBody
-      ? `<strong>Description:</strong><br>${escapeHtml(descriptionBody).replace(/\n/g, "<br>")}`
-      : "";
-
-    return `
-      <div class="spellcrafting-chat-description">
-        ${attributeHtml}
-        ${spellAttackSpacerHtml}
-        ${appliedAugmentsHtml}
-        ${descriptionHtml ? `<br>${descriptionHtml}` : ""}
-      </div>
-    `;
+    return removeCoreAugmentsSection(strippedLines.join("\n"));
   }
 
   function buildPreparedSpellDescriptionHtml(actor, spellbookId, core, totalSP, details, spellName, options = {}) {
     const resolvedAttributes = getResolvedSpellAttributes(core, totalSP);
     const attributeText = buildPreparedAttributeText(core, totalSP);
-    const descriptionBody = buildCastDescriptionText(core, totalSP);
+    const descriptionBody = buildCastDescriptionText(core);
     const spellAttackButtonHtml = options.includeSpellAttackButton === false
       ? ""
       : buildSpellAttackButtonHtml(actor, spellbookId, core, spellName || resolvedAttributes.name, resolvedAttributes.savingThrow);
@@ -2425,25 +2402,6 @@
     );
   }
 
-  function buildCastChatContent(actor, spellbookName, core, totalSP, details, spellName, spellbookId) {
-    const descriptionHtml = buildCastDescriptionHtml(actor, spellbookId, core, totalSP, details, spellName);
-    const coreName = escapeHtml(spellName || getDisplaySpellName(core.name));
-    const coreImage = escapeHtml(core?.img || "icons/svg/book.svg");
-    return `
-      <div class="spellcrafting-chat-card" style="border:1px solid #8b7f6a;background:#f3f0e8;">
-        <div class="spellcrafting-chat-banner" style="display:grid;grid-template-columns:52px minmax(0,1fr);align-items:end;min-height:66px;background:linear-gradient(90deg,#4b1fd3 0%,#5b32ec 100%);color:#fff;">
-          <div class="spellcrafting-chat-banner-icon" style="display:flex;align-items:center;justify-content:center;height:100%;padding:0.35rem 0.25rem;background:rgba(255,255,255,0.08);">
-            <img src="${coreImage}" alt="${coreName}" style="width:40px;height:40px;object-fit:contain;border:none;" />
-          </div>
-          <div class="spellcrafting-chat-banner-title" style="padding:0.45rem 0.55rem 0.35rem 0.6rem;font-size:1.5rem;font-weight:700;line-height:1;text-transform:uppercase;letter-spacing:0.02em;">${coreName}</div>
-        </div>
-        <div class="spellcrafting-chat-body" style="padding:0.75rem 0.85rem 0.85rem;">
-        ${descriptionHtml}
-        </div>
-      </div>
-    `;
-  }
-
   function buildSpellItemData(actor, state, options = {}) {
     const core = getActiveItemById(state, state.selectedCoreId);
     if (!core) {
@@ -2478,7 +2436,10 @@
       const actions = getObjectPath(data, ["system", "actions"]);
       return !!actions && typeof actions === "object" && Object.keys(actions).length > 0;
     };
-    const baseSource = sourceHasActions(coreSource) ? coreSource : templateSource;
+    const preferTemplateSource = options.preferTemplateSource === true;
+    const baseSource = preferTemplateSource
+      ? (templateSource || (sourceHasActions(coreSource) ? coreSource : null))
+      : (sourceHasActions(coreSource) ? coreSource : templateSource);
     const itemData = baseSource
       ? (foundry?.utils?.deepClone ? foundry.utils.deepClone(baseSource) : JSON.parse(JSON.stringify(baseSource)))
       : templateSource
@@ -2529,11 +2490,64 @@
     };
   }
 
-  async function createSpellChatFromTemporaryItem(actor, itemData, fallbackChatData) {
-    const chatData = { ...fallbackChatData };
-    applyChatRollMode(chatData);
-    await ChatMessage.create(chatData);
-    return true;
+  async function createSpellChatFromTemporaryItem(actor, itemData) {
+    let createdSpell = null;
+    try {
+      [createdSpell] = await actor.createEmbeddedDocuments("Item", [itemData]);
+      if (!createdSpell) {
+        throw new Error("Temporary spell item could not be created.");
+      }
+
+      const token = canvas.tokens.controlled[0] || actor?.getActiveTokens?.()?.[0] || actor?.token || null;
+      const defaultAction = createdSpell.defaultAction || getItemActionEntries(createdSpell)?.[0] || null;
+      const actionId = defaultAction?.id || defaultAction?._id || null;
+
+      if (typeof createdSpell.use === "function" && actionId) {
+        await createdSpell.use({ actionId, token, skipDialog: true });
+        return true;
+      }
+
+      if (typeof createdSpell.use === "function") {
+        await createdSpell.use({ token, skipDialog: true });
+        return true;
+      }
+
+      if (defaultAction?.use && typeof defaultAction.use === "function") {
+        await defaultAction.use({ token, skipDialog: true });
+        return true;
+      }
+
+      if (typeof createdSpell.displayCard === "function") {
+        console.warn("Spellcrafting macro fell back to displayCard() for spontaneous casting.", {
+          actorId: actor?.id || null,
+          spellId: createdSpell?.id || null,
+          spellName: createdSpell?.name || itemData?.name || null,
+          actionId,
+          actionCount: getItemActionEntries(createdSpell).length,
+        });
+        await createdSpell.displayCard(undefined, { token });
+        return true;
+      }
+
+      throw new Error(
+        [
+          "The temporary spell was created, but PF1 did not expose a usable native cast action.",
+          `Spell: ${createdSpell?.name || itemData?.name || "Unknown"}`,
+          `Action count: ${getItemActionEntries(createdSpell).length}`,
+          `Item.use: ${typeof createdSpell?.use === "function" ? "yes" : "no"}`,
+          `Default action use: ${typeof defaultAction?.use === "function" ? "yes" : "no"}`,
+          `displayCard: ${typeof createdSpell?.displayCard === "function" ? "yes" : "no"}`,
+        ].join(" "),
+      );
+    } finally {
+      if (createdSpell?.id) {
+        try {
+          await actor.deleteEmbeddedDocuments("Item", [createdSpell.id]);
+        } catch (err) {
+          console.warn("Spellcrafting macro could not clean up temporary cast spell.", err);
+        }
+      }
+    }
   }
 
   function toSystemSchoolKey(value) {
@@ -3326,17 +3340,12 @@
       return false;
     }
     const totalSP = calculateTotalSP(actor, state);
-    const { spellbookName, itemData, augmentDetails, resolvedAttributes } = buildSpellItemData(actor, state);
+    const { itemData } = buildSpellItemData(actor, state, {
+      preferTemplateSource: state.preparationMode === "spontaneous",
+    });
 
     await spendSpellbookPoints(actor, state.spellbookId, totalSP);
-
-    const fallbackChatData = {
-      user: game.user.id,
-      speaker: ChatMessage.getSpeaker({ actor }),
-      flavor: `${actor.name} casts ${resolvedAttributes.name}`,
-      content: buildCastChatContent(actor, spellbookName, core, totalSP, augmentDetails, resolvedAttributes.name, state.spellbookId),
-    };
-    return createSpellChatFromTemporaryItem(actor, itemData, fallbackChatData);
+    return createSpellChatFromTemporaryItem(actor, itemData);
   }
 
   function registerSpellAttackChatCardHook() {
@@ -3480,7 +3489,9 @@
         .spellcrafting-augment-list { flex: 1 1 auto; overflow-y: auto; display: flex; flex-direction: column; gap: 0.65rem; min-height: 0; padding-right: 0.2rem; }
         .spellcrafting-augment-group { display: grid; gap: 0.45rem; }
         .spellcrafting-augment-group + .spellcrafting-augment-group { margin-top: 0.35rem; padding-top: 0.55rem; border-top: 1px solid rgba(159, 154, 140, 0.5); }
-        .spellcrafting-augment-group-title { font-size: 0.9rem; font-weight: 700; color: #3b3832; letter-spacing: 0.01em; }
+        .spellcrafting-augment-group-title { font-size: 1rem; font-weight: 800; color: #2f2b24; letter-spacing: 0.01em; line-height: 1.2; }
+        .spellcrafting-augment-group-limitation { margin-top: -0.1rem; font-size: 0.86rem; line-height: 1.28; color: #4a4438; }
+        .spellcrafting-augment-group-limitation strong { color: #2f2c25; }
         .spellcrafting-augment-entry { padding: 0.65rem 0.8rem; border: 1px solid #9c9485; border-radius: 4px; background: rgba(236, 233, 225, 0.78); color: #111; font-size: 0.91rem; }
         .spellcrafting-augment-entry label { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: start; gap: 0.8rem; }
         .spellcrafting-augment-entry strong { min-width: 2.25rem; padding-top: 0.05rem; color: #171614; }
@@ -3612,6 +3623,10 @@
     }, new Map());
 
     return Array.from(groupedEntries.values()).map(({ augmentItem, entries: groupEntries }) => {
+      const limitationText = getSpellAugmentLimitation(getSpellDescription(augmentItem));
+      const limitationHtml = limitationText
+        ? `<div class="spellcrafting-augment-group-limitation"><strong>Limitation:</strong> ${escapeHtml(limitationText)}</div>`
+        : "";
       const entryHtml = groupEntries.map(({ entry, index }) => {
         const key = `spell-${getItemSourceKey(augmentItem)}-${index}`;
         const isSelected = !!state.selectedSpellAugments[key];
@@ -3642,6 +3657,7 @@
       return `
         <div class="spellcrafting-augment-group">
           <div class="spellcrafting-augment-group-title">${escapeHtml(getDisplaySpellName(augmentItem.name))}</div>
+          ${limitationHtml}
           ${entryHtml}
         </div>
       `;
@@ -3657,7 +3673,7 @@
   function filterCoresByName(cores, filterText, state) {
     const normalizedFilter = String(filterText || "").trim().toLowerCase();
     if (!normalizedFilter) return cores;
-    return (cores || []).filter((core) => getCachedDisplaySpellNameSearch(state, core).startsWith(normalizedFilter));
+    return (cores || []).filter((core) => getCachedDisplaySpellNameSearch(state, core).includes(normalizedFilter));
   }
 
   function bindDialogEvents(html, spellbooks, state, actor) {

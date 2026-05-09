@@ -18,66 +18,38 @@
   const defaultSpellbookId = getValidSpellbookId(lastSelection.spellbookId) || spellbooks[0]?.id || "";
   const state = {
     spellbookId: defaultSpellbookId,
+    preparationMode: null,
     selectedSpellId: null,
+    coreFilterText: "",
+    selectedCoreId: null,
+    selectedCoreAugments: {},
+    selectedSpellAugments: {},
+    availableCores: [],
+    availableSpellAugments: [],
     availableSpells: [],
     itemLookup: {},
+    spellDataCacheKey: null,
+    displayNameCache: {},
+    displayNameSearchCache: {},
+    coreHoverDescriptionCache: {},
+    warnedHybridSpellbookId: null,
   };
+  const FILTER_INPUT_DEBOUNCE_MS = 75;
+  let coreFilterDebounceHandle = null;
+  let preparedSpellDataCache = null;
 
   installLongRestCleanupHook();
+  registerSpellAttackChatCardHook();
 
   const dialog = new Dialog({
     title: "Potion Brewing",
     content: buildDialogContent(spellbooks, state),
     buttons: {},
-    width: 465,
-    height: 820,
+    width: 1800,
+    height: 860,
     resizable: true,
     render: async function(html) {
-      dialog.setPosition({ width: 465, height: 820 });
-      const appWindow = html.closest(".app.window-app");
-      const dialogWindow = html.closest(".app.window-app, .dialog");
-      let dialogContent = dialogWindow.find(".window-content");
-      if (!dialogContent.length) dialogContent = html;
-
-      if (appWindow.length) {
-        appWindow.css({
-          width: "465px",
-          minWidth: "465px",
-          maxWidth: "465px",
-          height: "820px",
-          minHeight: "820px",
-          maxHeight: "820px",
-        });
-      }
-      dialogWindow.css({
-        width: "465px",
-        height: "820px",
-        minHeight: "820px",
-        minWidth: "465px",
-        maxWidth: "465px",
-        maxHeight: "820px",
-      });
-      dialogContent.css({
-        width: "100%",
-        maxWidth: "465px",
-        height: "100%",
-        minHeight: "100%",
-        overflow: "hidden",
-        display: "flex",
-        flexDirection: "column",
-        flex: "1 1 auto",
-        padding: "0.75rem",
-        boxSizing: "border-box",
-      });
-      html.css({
-        width: "100%",
-        height: "100%",
-        minHeight: "100%",
-        overflow: "hidden",
-        display: "flex",
-        flexDirection: "column",
-        flex: "1 1 auto",
-      });
+      const dialogWindow = applyDialogChrome(html, false);
       if (dialogWindow.length) {
         dialogWindow.addClass("brewing-dialog");
         dialogWindow.attr("data-brewing", "true");
@@ -110,37 +82,87 @@
     return spellbooks.some((book) => String(book.id) === String(candidate)) ? String(candidate) : "";
   }
 
+  function applyDialogChrome(html, isSpontaneous) {
+    const width = isSpontaneous ? 1800 : 465;
+    const height = isSpontaneous ? 860 : 820;
+    dialog.setPosition({ width, height });
+    const appWindow = html.closest(".app.window-app");
+    const dialogWindow = html.closest(".app.window-app, .dialog");
+    let dialogContent = dialogWindow.find(".window-content");
+    if (!dialogContent.length) dialogContent = html;
+
+    if (appWindow.length) {
+      appWindow.css({
+        width: `${width}px`,
+        minWidth: `${width}px`,
+        maxWidth: `${width}px`,
+        height: `${height}px`,
+        minHeight: `${height}px`,
+        maxHeight: `${height}px`,
+      });
+    }
+    dialogWindow.css({
+      width: `${width}px`,
+      minWidth: `${width}px`,
+      maxWidth: `${width}px`,
+      height: `${height}px`,
+      minHeight: `${height}px`,
+      maxHeight: `${height}px`,
+    });
+    dialogContent.css({
+      width: "100%",
+      height: "100%",
+      minHeight: "100%",
+      overflow: "hidden",
+      display: "flex",
+      flexDirection: "column",
+      flex: "1 1 auto",
+      padding: "0.75rem",
+      boxSizing: "border-box",
+    });
+    html.css({
+      width: "100%",
+      height: "100%",
+      minHeight: "100%",
+      overflow: "hidden",
+      display: "flex",
+      flexDirection: "column",
+      flex: "1 1 auto",
+    });
+    return dialogWindow;
+  }
+
   function installLongRestCleanupHook() {
     if (globalThis.pf1BrewingLongRestHookId != null) return;
     globalThis.pf1BrewingLongRestHookId = Hooks.on("pf1ActorRest", async (restActor, restOptions) => {
       try {
-        if (!shouldDeleteDraughtsOnRest(restOptions)) return;
-        await deleteBrewedDraughts(restActor);
+        if (!shouldDeleteDraftsOnRest(restOptions)) return;
+        await deleteBrewedDrafts(restActor);
       } catch (err) {
-        console.warn("Brewing macro could not clean up draughts after rest.", err);
+        console.warn("Brewing macro could not clean up drafts after rest.", err);
       }
     });
   }
 
-  function shouldDeleteDraughtsOnRest(restOptions) {
+  function shouldDeleteDraftsOnRest(restOptions) {
     if (!restOptions || typeof restOptions !== "object") return false;
     if (restOptions.restoreDailyUses === true) return true;
     const hours = Number(restOptions.hours ?? 0);
     return !Number.isNaN(hours) && hours >= 8;
   }
 
-  function isBrewedDraught(item) {
+  function isBrewedDraft(item) {
     return getObjectPath(item, ["flags", FLAG_SCOPE, "deleteOnLongRest"]) === true;
   }
 
-  async function deleteBrewedDraughts(actor) {
+  async function deleteBrewedDrafts(actor) {
     if (!actor?.items?.size && !Array.isArray(actor?.items)) return;
-    const draughtIds = actor.items
-      .filter((item) => isBrewedDraught(item))
+    const draftIds = actor.items
+      .filter((item) => isBrewedDraft(item))
       .map((item) => item.id)
       .filter(Boolean);
-    if (!draughtIds.length) return;
-    await actor.deleteEmbeddedDocuments("Item", draughtIds);
+    if (!draftIds.length) return;
+    await actor.deleteEmbeddedDocuments("Item", draftIds);
   }
 
   function getSelectedSpellbooksFromSheet(actor) {
@@ -1080,6 +1102,39 @@
     };
   }
 
+  function getDescriptionSavingThrowValue(core, savingThrowOverride = "") {
+    const explicitSavingThrow = String(savingThrowOverride || "").trim();
+    if (explicitSavingThrow) return explicitSavingThrow;
+
+    const parsedAttributes = parseSpellDescriptionAttributes(core);
+    return String(parsedAttributes.savingThrow || getSpellSavingThrow(core) || "").trim();
+  }
+
+  function shouldShowSpellAttackButton(core, savingThrowOverride = "") {
+    const savingThrow = getDescriptionSavingThrowValue(core, savingThrowOverride);
+    return !!savingThrow && savingThrow.toLowerCase() !== "none";
+  }
+
+  function buildSpellAttackButtonHtml(actor, spellbookId, core, spellName, savingThrowOverride = "") {
+    const savingThrow = getDescriptionSavingThrowValue(core, savingThrowOverride);
+    if (!shouldShowSpellAttackButton(core, savingThrow)) return "";
+    return `
+      <div class="spellcrafting-spell-attack-row" style="margin:0.05rem 0 0.95rem;">
+        <span
+          class="spellcrafting-spell-attack-button"
+          data-actor-uuid="${escapeHtml(actor.uuid || "")}"
+          data-spellbook-id="${escapeHtml(String(spellbookId || ""))}"
+          data-spell-school="${escapeHtml(getSpellSchool(core) || "")}"
+          data-saving-throw="${escapeHtml(savingThrow)}"
+          data-spell-name="${escapeHtml(spellName || getDisplaySpellName(core?.name || ""))}"
+          role="button"
+          tabindex="0"
+          style="display:inline-flex;align-items:center;justify-content:center;padding:0.56rem 1rem;border:1px solid #8f8674;border-radius:5px;background:linear-gradient(to bottom, #ddd4b8, #c9bea0);color:#1c1914;font-weight:700;font-size:1.15rem;line-height:1;cursor:pointer;text-decoration:none;"
+        >Spell Attack</span>
+      </div>
+    `;
+  }
+
   function getSpellSaveDc(item) {
     const actionEntries = getItemActionEntries(item);
     for (const action of actionEntries) {
@@ -1467,7 +1522,7 @@
     delete itemData.pack;
     delete itemData.actions;
 
-    itemData.name = `Draught of ${getDisplaySpellName(spell.name)}`;
+    itemData.name = `Draft of ${getDisplaySpellName(spell.name)}`;
     itemData.type = "consumable";
     itemData.img = spellSource?.img || templateSource?.img || itemData.img || "icons/consumables/potions/potion-bottle-corked-blue.webp";
     itemData.flags = itemData.flags && typeof itemData.flags === "object" ? itemData.flags : {};
@@ -1475,7 +1530,7 @@
 
     setObjectPathValue(itemData, ["flags", FLAG_SCOPE, "sourceUuid"], String(spell.uuid || ""));
     setObjectPathValue(itemData, ["flags", FLAG_SCOPE, "deleteOnLongRest"], true);
-    setObjectPathValue(itemData, ["flags", FLAG_SCOPE, "brewType"], "draught");
+    setObjectPathValue(itemData, ["flags", FLAG_SCOPE, "brewType"], "draft");
     setObjectPathValue(itemData, ["system", "description"], itemData.system.description && typeof itemData.system.description === "object" ? itemData.system.description : {});
     setObjectPathValue(itemData, ["system", "description", "value"], getSpellDescription(spell));
     setObjectPathValue(itemData, ["system", "quantity"], 1);
@@ -1573,9 +1628,855 @@
     return createdItem;
   }
 
+  async function addSpontaneousPotionToInventory(actor, state) {
+    const core = getActiveItemById(state, state.selectedCoreId);
+    if (!core) {
+      throw new Error("Select a Core before brewing.");
+    }
+    const customName = await promptForSpontaneousDraftName(state);
+    if (customName == null) return null;
+    const totalSP = calculateTotalSP(actor, state);
+    await spendSpellbookPoints(actor, state.spellbookId, totalSP);
+    const { itemData } = buildSpontaneousPotionItemData(actor, state, { customName });
+    const [createdItem] = await actor.createEmbeddedDocuments("Item", [itemData]);
+    return createdItem;
+  }
+
+  function normalizePreparationType(value) {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (!normalized) return null;
+    if (normalized.includes("hybrid")) return "hybrid";
+    if (normalized.includes("spont")) return "spontaneous";
+    if (normalized.includes("prep")) return "prepared";
+    return null;
+  }
+
+  function detectPreparationTypeFromEntry(entry) {
+    if (!entry || typeof entry !== "object") return null;
+    const explicitSearchPaths = [
+      ["preparationMode"],
+      ["spellPreparationMode"],
+      ["preparation", "mode"],
+      ["spellPreparation", "mode"],
+      ["casting", "type"],
+      ["castingType"],
+      ["spellcastingType"],
+      ["spellbook", "preparationMode"],
+      ["spellbook", "spellPreparationMode"],
+      ["book", "preparationMode"],
+      ["book", "spellPreparationMode"],
+    ];
+    for (const path of explicitSearchPaths) {
+      const match = normalizePreparationType(getObjectPath(entry, path));
+      if (match) return match;
+    }
+
+    const explicitFlags = [
+      ["isPrepared", "prepared"],
+      ["prepared", "prepared"],
+      ["isSpontaneous", "spontaneous"],
+      ["spontaneous", "spontaneous"],
+      ["isHybrid", "hybrid"],
+      ["hybrid", "hybrid"],
+    ];
+    for (const [key, mode] of explicitFlags) {
+      if (entry[key] === true) return mode;
+    }
+
+    const queue = [entry];
+    const seen = new Set();
+    while (queue.length) {
+      const current = queue.shift();
+      if (!current || typeof current !== "object" || seen.has(current)) continue;
+      seen.add(current);
+      for (const [key, value] of Object.entries(current)) {
+        const keyText = String(key || "").toLowerCase();
+        if (typeof value === "string") {
+          if (/(prep|spont|hybrid|casting)/i.test(keyText)) {
+            const match = normalizePreparationType(value);
+            if (match) return match;
+          }
+        } else if (typeof value === "boolean") {
+          if (value && /prepared/.test(keyText)) return "prepared";
+          if (value && /spontaneous/.test(keyText)) return "spontaneous";
+          if (value && /hybrid/.test(keyText)) return "hybrid";
+        } else if (value && typeof value === "object") {
+          queue.push(value);
+        }
+      }
+    }
+    return null;
+  }
+
+  function getSpellbookPreparationType(actor, spellbookId) {
+    const entry = resolveSpellbookAttributeEntry(actor, spellbookId)?.[1];
+    return detectPreparationTypeFromEntry(entry);
+  }
+
+  function getCompendiumFolderName(pack) {
+    return pack?.folder?.name || pack?.metadata?.folder || pack?.folderName || "";
+  }
+
+  function getDocumentFolderName(document) {
+    return document?.folder?.name || document?._source?.folder?.name || "";
+  }
+
+  function findCompendiumPack(label, folderName) {
+    const normalizedLabel = String(label || "").trim().toLowerCase();
+    const normalizedFolder = String(folderName || "").trim().toLowerCase();
+    return Array.from(game.packs ?? []).find((pack) => {
+      const packLabel = String(pack.metadata?.label || pack.title || pack.collection || "").trim().toLowerCase();
+      const packFolder = String(getCompendiumFolderName(pack) || "").trim().toLowerCase();
+      return packLabel.includes(normalizedLabel) && (!normalizedFolder || packFolder === normalizedFolder);
+    }) || null;
+  }
+
+  async function loadPreparedSpellData() {
+    if (preparedSpellDataCache) return preparedSpellDataCache;
+    const spellPack = findCompendiumPack("Spell Cores/Augments", "Darkfinder");
+    if (!spellPack) {
+      throw new Error("Could not find the Darkfinder compendium 'Spell Cores/Augments'.");
+    }
+    const documents = await spellPack.getDocuments();
+    const cores = [];
+    const augments = [];
+    for (const item of documents) {
+      const folderName = String(getDocumentFolderName(item) || "").trim().toLowerCase();
+      if (folderName === "augments" || isAugmentSpell(item)) {
+        augments.push(item);
+      } else {
+        cores.push(item);
+      }
+    }
+    preparedSpellDataCache = {
+      cores: sortItemsByDisplayName(cores),
+      augments: sortItemsByDisplayName(augments),
+      coreIndex: new Map(sortItemsByDisplayName(cores).map((item) => [normalizeSpellReferenceName(item.name), item])),
+      augmentIndex: new Map(sortItemsByDisplayName(augments).map((item) => [normalizeSpellReferenceName(item.name), item])),
+    };
+    return preparedSpellDataCache;
+  }
+
+  function normalizeSpellReferenceName(name) {
+    return getDisplaySpellName(name).trim().toLowerCase();
+  }
+
+  function mapSpontaneousItemsToBestSource(items, compendiumIndex) {
+    return sortItemsByDisplayName((items || []).map((item) => compendiumIndex?.get(normalizeSpellReferenceName(item?.name || "")) || item));
+  }
+
+  function getSpellType(item) {
+    const name = String(item?.name || "");
+    if (/\(augment\)\s*$/i.test(name) || /\baugment\b/i.test(name)) return "augment";
+    const descriptionType = parseDescriptionType(getSpellDescription(item));
+    return descriptionType === "augment" ? "augment" : "core";
+  }
+
+  function isAugmentSpell(item) {
+    return getSpellType(item) === "augment";
+  }
+
+  function isCoreSpell(item) {
+    return !!item && !isAugmentSpell(item);
+  }
+
+  function parseDescriptionType(description) {
+    if (!description) return null;
+    const plaintext = stripHtmlTags(description);
+    return plaintext.match(/Type:\s*([^\n\r]+)/i)?.[1]?.trim()?.toLowerCase?.() || null;
+  }
+
+  function clearSelectedSpellData(state) {
+    state.selectedCoreId = null;
+    state.selectedCoreAugments = {};
+    state.selectedSpellAugments = {};
+  }
+
+  function resetDerivedDisplayCaches(state) {
+    state.displayNameCache = {};
+    state.displayNameSearchCache = {};
+    state.coreHoverDescriptionCache = {};
+  }
+
+  function setLoadedSpellData(state, cacheKey, cores, augments) {
+    state.availableCores = cores;
+    state.availableSpellAugments = augments;
+    state.itemLookup = indexItemsBySourceKey([...cores, ...augments]);
+    state.spellDataCacheKey = cacheKey;
+    resetDerivedDisplayCaches(state);
+  }
+
+  function clearLoadedSpellData(state, cacheKey = null) {
+    state.availableCores = [];
+    state.availableSpellAugments = [];
+    state.itemLookup = {};
+    state.spellDataCacheKey = cacheKey;
+    resetDerivedDisplayCaches(state);
+  }
+
+  function getCachedDisplaySpellName(state, item) {
+    const itemKey = getItemSourceKey(item);
+    if (!itemKey) return getDisplaySpellName(item?.name || "");
+    if (state.displayNameCache[itemKey] == null) {
+      state.displayNameCache[itemKey] = getDisplaySpellName(item?.name || "");
+    }
+    return state.displayNameCache[itemKey];
+  }
+
+  function getCachedDisplaySpellNameSearch(state, item) {
+    const itemKey = getItemSourceKey(item);
+    if (!itemKey) return getDisplaySpellName(item?.name || "").toLowerCase();
+    if (state.displayNameSearchCache[itemKey] == null) {
+      state.displayNameSearchCache[itemKey] = getCachedDisplaySpellName(state, item).toLowerCase();
+    }
+    return state.displayNameSearchCache[itemKey];
+  }
+
+  function normalizeDisplayedSpellText(value) {
+    return String(value || "")
+      .replace(/\r/g, "")
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  function stripHtmlTags(html) {
+    if (!html) return "";
+    return String(html)
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/(p|div|li|tr|th|td|h[1-6])>/gi, "\n")
+      .replace(/<(p|div|li|tr|th|td|h[1-6])[^>]*>/gi, "\n")
+      .replace(/<[^>]+>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&")
+      .replace(/&quot;/g, "\"")
+      .replace(/&#39;/g, "'")
+      .replace(/[ \t\f\v]+/g, " ")
+      .replace(/\n{2,}/g, "\n")
+      .trim();
+  }
+
+  function descriptionHasStructuredSpellAttributes(description) {
+    const text = stripHtmlTags(description);
+    const attributePatterns = [
+      /^Type:\s*/im,
+      /^SP Cost:\s*/im,
+      /^School:\s*/im,
+      /^Casting Time:\s*/im,
+      /^Range:\s*/im,
+      /^Target:\s*/im,
+      /^Duration:\s*/im,
+      /^Saving Throw:\s*/im,
+      /^Description:\s*/im,
+    ];
+    return attributePatterns.filter((pattern) => pattern.test(text)).length >= 4;
+  }
+
+  function getCoreDescriptionWithoutAugments(core) {
+    const plaintext = stripHtmlTags(getSpellDescription(core));
+    return normalizeDisplayedSpellText(plaintext.replace(/\n?\s*Core Augments?:[\s\S]*$/i, "").trim());
+  }
+
+  function parseSpellDescriptionAttributes(core) {
+    const text = getCoreDescriptionWithoutAugments(core);
+    if (!text) return {};
+    const descriptionIndex = text.search(/(?:^|\n)\s*Description:\s*/i);
+    const attributeText = descriptionIndex >= 0 ? text.slice(0, descriptionIndex).trim() : text;
+    const attributes = {};
+    const patterns = {
+      name: /(?:^|\n)\s*Name:\s*([^\n\r]+)/i,
+      school: /(?:^|\n)\s*School:\s*([^\n\r]+)/i,
+      castingTime: /(?:^|\n)\s*Casting Time:\s*([^\n\r]+)/i,
+      range: /(?:^|\n)\s*Range:\s*([^\n\r]+)/i,
+      target: /(?:^|\n)\s*Target:\s*([^\n\r]+)/i,
+      duration: /(?:^|\n)\s*Duration:\s*([^\n\r]+)/i,
+      savingThrow: /(?:^|\n)\s*Saving Throw:\s*([^\n\r]+)/i,
+    };
+    for (const [key, pattern] of Object.entries(patterns)) {
+      const value = attributeText.match(pattern)?.[1]?.trim();
+      if (value) attributes[key] = normalizeDisplayedSpellText(value);
+    }
+    return attributes;
+  }
+
+  function parseAugmentLines(description, headingRegex) {
+    if (!description) return [];
+    const plaintext = stripHtmlTags(description);
+    const sectionStart = plaintext.search(headingRegex);
+    const sectionText = sectionStart === -1 ? plaintext : plaintext.slice(sectionStart);
+    const augmentRegex = /([^\n\r]*?)\(\s*([+-]?\d+)(\*)?\s*\)\s*([^\n\r]+)/g;
+    const entries = [];
+    let match;
+    while ((match = augmentRegex.exec(sectionText)) !== null) {
+      const prefix = match[1].trim();
+      const cost = Number(match[2]);
+      const repeatable = !!match[3];
+      let descriptionText = match[4].trim();
+      if (descriptionText.startsWith(":")) descriptionText = descriptionText.slice(1).trim();
+      const normalizedTitle = prefix ? prefix.replace(/[:\s]*$/, "") : null;
+      const costLabel = `${cost >= 0 ? "+" : ""}${cost}${repeatable ? "*" : ""}`;
+      const title = normalizedTitle ? `${normalizedTitle} (${costLabel})` : costLabel;
+      entries.push({ cost, repeatable, title, description: descriptionText, raw: match[0].trim() });
+    }
+    return entries;
+  }
+
+  function getSpellAugmentLimitation(description) {
+    const plaintext = stripHtmlTags(description || "");
+    return plaintext.match(/(?:^|\n)\s*Limitation:\s*([^\n\r]+)/i)?.[1]?.trim() || "";
+  }
+
+  function getCoreHoverSpellPointCost(core) {
+    return getSpellPointCost(core);
+  }
+
+  function buildCoreHoverDescription(core) {
+    const rawDescription = normalizeDisplayedSpellText(stripHtmlTags(getSpellDescription(core)));
+    if (descriptionHasStructuredSpellAttributes(rawDescription)) return rawDescription;
+    return normalizeDisplayedSpellText([
+      getDisplaySpellName(core?.name || "") || "Unnamed Core",
+      "Type: Core",
+      `SP Cost: ${getCoreHoverSpellPointCost(core)}`,
+      `School: ${getSpellSchool(core) || "None"}`,
+      `Casting Time: ${getSpellCastingTime(core) || "None"}`,
+      `Range: ${getSpellRange(core) || "None"}`,
+      `Target: ${getSpellTarget(core) || "None"}`,
+      `Duration: ${getSpellDuration(core) || "None"}`,
+      `Saving Throw: ${getSpellSavingThrow(core) || "None"}`,
+      "Description:",
+      rawDescription || "None",
+    ].join("\n"));
+  }
+
+  function getCachedCoreHoverDescription(state, core) {
+    const itemKey = getItemSourceKey(core);
+    if (!itemKey) return buildCoreHoverDescription(core);
+    if (state.coreHoverDescriptionCache[itemKey] == null) {
+      state.coreHoverDescriptionCache[itemKey] = buildCoreHoverDescription(core);
+    }
+    return state.coreHoverDescriptionCache[itemKey];
+  }
+
+  function filterCoresByName(cores, filterText, state) {
+    const normalizedFilter = String(filterText || "").trim().toLowerCase();
+    if (!normalizedFilter) return cores;
+    return (cores || []).filter((core) => getCachedDisplaySpellNameSearch(state, core).includes(normalizedFilter));
+  }
+
+  async function ensureSpontaneousSpellDataLoaded(actor, state) {
+    state.preparationMode = getSpellbookPreparationType(actor, state.spellbookId) || "spontaneous";
+    const cacheKey = JSON.stringify({
+      spellbookId: String(state.spellbookId || ""),
+      preparationMode: state.preparationMode,
+    });
+    if (!state.spellbookId) {
+      clearLoadedSpellData(state);
+      return;
+    }
+    if (state.preparationMode === "hybrid") {
+      if (state.warnedHybridSpellbookId !== state.spellbookId) {
+        ui.notifications.error("This Hybrid caster needs to choose Prepared or Spontaneous on the spellbook before using Brewing.");
+        state.warnedHybridSpellbookId = state.spellbookId;
+      }
+      clearLoadedSpellData(state, cacheKey);
+      return;
+    }
+    state.warnedHybridSpellbookId = null;
+    if (state.preparationMode !== "spontaneous") {
+      clearLoadedSpellData(state, cacheKey);
+      return;
+    }
+    if (state.spellDataCacheKey === cacheKey && Object.keys(state.itemLookup || {}).length) return;
+    try {
+      const preparedData = await loadPreparedSpellData();
+      const actorCores = getSpellbookSpells(actor, state.spellbookId).filter((item) => isCoreSpell(item));
+      const actorAugments = getSpellbookSpells(actor, state.spellbookId).filter((item) => isAugmentSpell(item));
+      setLoadedSpellData(
+        state,
+        cacheKey,
+        mapSpontaneousItemsToBestSource(actorCores, preparedData.coreIndex),
+        mapSpontaneousItemsToBestSource(actorAugments, preparedData.augmentIndex),
+      );
+    } catch (err) {
+      console.warn("Brewing macro could not map spontaneous spell items to compendium data.", err);
+      setLoadedSpellData(
+        state,
+        cacheKey,
+        sortItemsByDisplayName(getSpellbookSpells(actor, state.spellbookId).filter((item) => isCoreSpell(item))),
+        sortItemsByDisplayName(getSpellbookSpells(actor, state.spellbookId).filter((item) => isAugmentSpell(item))),
+      );
+    }
+  }
+
+  function getSelectedCoreBaseSP(actor, state) {
+    const core = getActiveItemById(state, state.selectedCoreId);
+    return core ? getSpellPointCost(core) : 0;
+  }
+
+  function normalizeSpellAttributeDuration(durationText, totalSP) {
+    const rawDuration = normalizeDisplayedSpellText(String(durationText || "").trim());
+    if (!rawDuration) return rawDuration;
+    if (/^(?:@cl|SP spent)\s+rounds?$/i.test(rawDuration)) return `${totalSP} rounds`;
+    if (/^(?!1\b)(?:\d+|SP spent)\s+round$/i.test(rawDuration)) return rawDuration.replace(/\bround$/i, "rounds");
+    if (/\bminutes?\b/i.test(rawDuration) || /\bhours?\b/i.test(rawDuration)) return "Concentration";
+    if (/\bdays?\b/i.test(rawDuration)) return "24 hours";
+    return rawDuration;
+  }
+
+  function getResolvedBuiltSpellAttributes(core, totalSP) {
+    const parsedAttributes = parseSpellDescriptionAttributes(core);
+    const rawDuration = parsedAttributes.duration || getSpellDuration(core) || "None";
+    return {
+      name: parsedAttributes.name || getDisplaySpellName(core.name) || "None",
+      spCost: String(totalSP),
+      school: parsedAttributes.school || getSpellSchool(core) || "None",
+      castingTime: parsedAttributes.castingTime || getSpellCastingTime(core) || "None",
+      range: parsedAttributes.range || getSpellRange(core) || "None",
+      target: parsedAttributes.target || getSpellTarget(core) || "None",
+      duration: normalizeSpellAttributeDuration(rawDuration, totalSP) || "None",
+      savingThrow: parsedAttributes.savingThrow || getSpellSavingThrow(core) || "None",
+      level: Math.max(0, Math.ceil(totalSP / 2)),
+    };
+  }
+
+  function buildPreparedAttributeText(core, totalSP) {
+    const resolvedAttributes = getResolvedBuiltSpellAttributes(core, totalSP);
+    const lines = [
+      `<strong>SP Cost:</strong> ${escapeHtml(resolvedAttributes.spCost)}`,
+      `<strong>School:</strong> ${escapeHtml(resolvedAttributes.school)}`,
+      `<strong>Casting Time:</strong> ${escapeHtml(resolvedAttributes.castingTime)}`,
+      `<strong>Range:</strong> ${escapeHtml(resolvedAttributes.range)}`,
+      `<strong>Target:</strong> ${escapeHtml(resolvedAttributes.target)}`,
+      `<strong>Duration:</strong> ${escapeHtml(resolvedAttributes.duration)}`,
+      `<strong>Saving Throw:</strong> ${escapeHtml(resolvedAttributes.savingThrow)}`,
+    ];
+    return lines.join("\n");
+  }
+
+  function calculateTotalSP(actor, state) {
+    let total = getSelectedCoreBaseSP(actor, state);
+    for (const entry of [...getSelectedAugmentDetails(actor, state, "core"), ...getSelectedAugmentDetails(actor, state, "spell")]) {
+      total += entry.augment.cost * entry.count;
+    }
+    return total;
+  }
+
+  function getSelectedAugmentDetails(actor, state, type) {
+    const collection = type === "core" ? state.selectedCoreAugments : state.selectedSpellAugments;
+    const entries = [];
+    for (const key of Object.keys(collection)) {
+      const prefix = key.slice(0, key.indexOf("-"));
+      if (type === "core" && prefix !== "core") continue;
+      if (type === "spell" && prefix !== "spell") continue;
+      const lastDash = key.lastIndexOf("-");
+      const itemId = key.slice(prefix.length + 1, lastDash);
+      const entryIndex = Number(key.slice(lastDash + 1));
+      const item = getActiveItemById(state, itemId);
+      if (!item) continue;
+      const parsed = parseAugmentLines(getSpellDescription(item), type === "core" ? /Core Augments?:/i : /Augment|Description:/i);
+      const augment = parsed[entryIndex];
+      if (!augment) continue;
+      entries.push({ item, augment, count: Math.max(1, collection[key].count || 1), type, key });
+    }
+    return entries;
+  }
+
+  function getSignedCostLabel(cost) {
+    return `${cost >= 0 ? "+" : ""}${cost}`;
+  }
+
+  function formatAppliedAugmentLabel(detail) {
+    const rawTitle = normalizeDisplayedSpellText(String(detail.augment.title || "").trim());
+    const baseTitle = rawTitle.replace(/\s*\([^)]+\)\s*$/, "").trim();
+    const costLabel = `(${getSignedCostLabel(detail.augment.cost)})`;
+    const repeatLabel = detail.augment.repeatable && detail.count > 1 ? ` x${detail.count}` : "";
+    const isCostOnlyTitle = !baseTitle || /^[+-]?\d+\*?$/.test(baseTitle);
+    return `${isCostOnlyTitle ? "" : `${baseTitle} `}${costLabel}${repeatLabel}`;
+  }
+
+  function getAppliedAugmentDisplayText(detail) {
+    const rawTitle = normalizeDisplayedSpellText(String(detail.augment.title || "").trim());
+    const baseTitle = rawTitle.replace(/\s*\([^)]+\)\s*$/, "").trim();
+    const isCostOnlyTitle = !baseTitle || /^[+-]?\d+\*?$/.test(baseTitle);
+    return normalizeDisplayedSpellText(`${isCostOnlyTitle ? "" : `${baseTitle}: `}${detail.augment.description}`).trim();
+  }
+
+  function buildAppliedAugmentHtml(details) {
+    if (!details.length) {
+      return "<div><strong>Applied Augments:</strong><br><span>None</span></div>";
+    }
+    return `
+      <div>
+        <strong>Applied Augments:</strong>
+        <div style="display:grid;gap:0.35rem;margin-top:0.35rem;">
+          ${details.map((detail) => `
+            <div style="display:grid;grid-template-columns:max-content minmax(0,1fr);align-items:start;column-gap:0.5rem;">
+              <span style="white-space:nowrap;font-weight:700;">${escapeHtml(formatAppliedAugmentLabel(detail))}</span>
+              <span style="min-width:0;overflow-wrap:anywhere;">${escapeHtml(getAppliedAugmentDisplayText(detail))}</span>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function buildCastDescriptionText(core) {
+    let trimmed = getCoreDescriptionWithoutAugments(core);
+    const descriptionMatch = trimmed.match(/(?:^|\n)\s*Description:\s*/i);
+    if (descriptionMatch) {
+      const start = (descriptionMatch.index || 0) + descriptionMatch[0].length;
+      return trimmed.slice(start).trim();
+    }
+    return trimmed
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((line) => !/^(Name|SP Cost|School|Casting Time|Range|Target|Duration|Saving Throw)\s*:/i.test(line))
+      .join("\n")
+      .trim();
+  }
+
+  function buildPreparedSpellDescriptionHtml(actor, spellbookId, core, totalSP, details, spellName) {
+    const resolvedAttributes = getResolvedBuiltSpellAttributes(core, totalSP);
+    const attributeText = buildPreparedAttributeText(core, totalSP);
+    const descriptionBody = buildCastDescriptionText(core);
+    const spellAttackButtonHtml = buildSpellAttackButtonHtml(
+      actor,
+      spellbookId,
+      core,
+      spellName || resolvedAttributes.name,
+      resolvedAttributes.savingThrow,
+    );
+    const spellAttackSpacerHtml = spellAttackButtonHtml
+      ? spellAttackButtonHtml
+      : `<div class="spellcrafting-spell-attack-spacer" style="height:0.45rem;"></div>`;
+    const appliedAugmentsHtml = buildAppliedAugmentHtml(details);
+    const attributeHtml = attributeText.replace(/\n/g, "<br>");
+    const descriptionHtml = descriptionBody
+      ? `<strong>Description:</strong><br>${escapeHtml(descriptionBody).replace(/\n/g, "<br>")}`
+      : "";
+
+    return `
+      <div class="brewing-generated-description">
+        <strong>${escapeHtml(resolvedAttributes.name)}</strong>
+        <br>
+        ${attributeHtml}
+        ${spellAttackSpacerHtml}
+        ${appliedAugmentsHtml}
+        ${descriptionHtml ? `<br>${descriptionHtml}` : ""}
+      </div>
+    `;
+  }
+
+  async function promptForSpontaneousDraftName(state) {
+    const core = getActiveItemById(state, state.selectedCoreId);
+    if (!core) return null;
+
+    const defaultName = getDisplaySpellName(core.name) || "";
+    const content = `
+      <div style="display:grid; gap:0.8rem;">
+        <div style="display:grid; grid-template-columns:max-content minmax(0,1fr); align-items:center; gap:0.55rem; padding-bottom:0.35rem;">
+          <span style="font-weight:700; white-space:nowrap;">Draft of</span>
+          <input
+            id="brewing-custom-name"
+            type="text"
+            value="${escapeHtml(defaultName)}"
+            placeholder="Name your new draft"
+            style="width:100%; min-height:2.2rem; padding:0.45rem 0.55rem; border:1px solid #8f8673; border-radius:4px;"
+          />
+        </div>
+      </div>
+    `;
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const settle = (value) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+
+      new Dialog({
+        title: "Name New Draft",
+        content,
+        buttons: {
+          accept: {
+            label: "Accept",
+            callback: (html) => {
+              const input = html.find("#brewing-custom-name");
+              const chosenName = String(input.val() || "").trim();
+              settle(chosenName || null);
+            },
+          },
+          cancel: {
+            label: "Cancel",
+            callback: () => settle(null),
+          },
+        },
+        default: "accept",
+        close: () => settle(null),
+        render: (html) => {
+          const input = html.find("#brewing-custom-name");
+          const acceptButton = html.closest(".app").find('[data-button="accept"]');
+          const syncAcceptState = () => {
+            const hasName = String(input.val() || "").trim().length > 0;
+            acceptButton.prop("disabled", !hasName);
+          };
+
+          acceptButton.prop("disabled", !defaultName.trim().length);
+          input.on("input change", syncAcceptState);
+          setTimeout(() => {
+            input.trigger("focus");
+            input[0]?.setSelectionRange?.(0, String(input.val() || "").length);
+            syncAcceptState();
+          }, 0);
+        },
+      }).render(true);
+    });
+  }
+
+  function applyChatRollMode(chatData) {
+    const rollMode = game.settings?.get("core", "rollMode") || CONST.DICE_ROLL_MODES.PUBLIC;
+    const applyRollMode = ChatMessage.applyRollMode || ChatMessage.implementation?.applyRollMode;
+    if (typeof applyRollMode === "function") {
+      applyRollMode(chatData, rollMode);
+    } else {
+      chatData.rollMode = rollMode;
+    }
+    return chatData;
+  }
+
+  function registerSpellAttackChatCardHook() {
+    globalThis.pf1SpellcraftingHandleAttackButton = async function(buttonElement) {
+      const button = buttonElement instanceof HTMLElement ? buttonElement : buttonElement?.currentTarget;
+      if (!button || button.disabled) return;
+
+      const actorUuid = button.dataset.actorUuid || "";
+      const spellbookId = button.dataset.spellbookId || "";
+      const spellSchool = button.dataset.spellSchool || "";
+      const savingThrow = button.dataset.savingThrow || "None";
+
+      const actor = actorUuid ? await fromUuid(actorUuid) : null;
+      if (!actor) {
+        ui.notifications.warn("The actor for this Spell Attack could not be found.");
+        return;
+      }
+
+      const attackData = getSpellAttackData(actor, spellbookId, spellSchool);
+      const roll = new Roll(attackData.formulaText);
+      await roll.evaluate();
+      const d20Result = Number(roll.dice?.[0]?.total ?? roll.terms?.find?.((term) => term?.faces === 20)?.total ?? 0);
+      const dcBonusTooltip = attackData.dcBonusTotal ? ` + ${attackData.dcBonusTotal} [Spell DC Bonuses]` : "";
+      const tooltipText = `${d20Result} [1d20] + ${attackData.casterLevelHalf} [CL/2] + ${attackData.abilityMod} [${attackData.abilityLabel}]${dcBonusTooltip}`;
+
+      const resultContent = `
+        <div class="spellcrafting-spell-attack-result" style="display:flex;justify-content:center;padding:0.15rem 0;">
+          <div title="${escapeHtml(tooltipText)}" style="min-width:208px;max-width:100%;padding:0.75rem 0.85rem;border:1px solid #b6a16e;border-radius:8px;background:linear-gradient(180deg, #f6f1e5 0%, #e8dfcf 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.55), 0 2px 5px rgba(0,0,0,0.08);text-align:center;cursor:help;">
+            <div style="font-size:0.7rem;font-weight:800;letter-spacing:0.07em;text-transform:uppercase;color:#6b5c3d;">Spell Attack</div>
+            <div style="margin-top:0.22rem;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+              <span class="spellcrafting-spell-attack-total" style="font-weight:900;font-size:2rem;line-height:1;color:#1f1a12;">${escapeHtml(String(roll.total))}</span>
+              <span style="margin-top:0.18rem;font-size:0.98rem;font-weight:700;line-height:1.08;color:#3e3424;">${escapeHtml(savingThrow)}</span>
+            </div>
+          </div>
+        </div>
+      `;
+      const chatData = {
+        user: game.user.id,
+        speaker: ChatMessage.getSpeaker({ actor }),
+        content: resultContent,
+      };
+      applyChatRollMode(chatData);
+      await ChatMessage.create(chatData);
+    };
+
+    if (globalThis.pf1SpellcraftingAttackHookId != null) {
+      Hooks.off("renderChatMessage", globalThis.pf1SpellcraftingAttackHookId);
+      Hooks.off("renderChatMessageHTML", globalThis.pf1SpellcraftingAttackHookId);
+      globalThis.pf1SpellcraftingAttackHookId = null;
+    }
+
+    globalThis.pf1SpellcraftingAttackHookId = Hooks.on("renderChatMessageHTML", (message, element) => {
+      const root = element instanceof HTMLElement ? element : null;
+      if (!root) return;
+
+      const buttons = root.querySelectorAll(".spellcrafting-spell-attack-button");
+      if (!buttons.length) return;
+
+      const messageAuthorId = String(message.author?.id || "");
+      const isCreator = messageAuthorId === String(game.user.id);
+
+      for (const button of buttons) {
+        button.setAttribute("aria-disabled", isCreator ? "false" : "true");
+        button.setAttribute("data-disabled", isCreator ? "false" : "true");
+        button.style.opacity = isCreator ? "1" : "0.6";
+        button.style.cursor = isCreator ? "pointer" : "not-allowed";
+
+        if (!isCreator) {
+          button.setAttribute("title", "Only the player who created this chat card can use Spell Attack.");
+        } else {
+          button.removeAttribute("title");
+        }
+
+        button.onclick = async (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (button.dataset.disabled === "true") return;
+          await globalThis.pf1SpellcraftingHandleAttackButton(button);
+        };
+
+        button.onkeydown = async (event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          event.stopPropagation();
+          if (button.dataset.disabled === "true") return;
+          await globalThis.pf1SpellcraftingHandleAttackButton(button);
+        };
+      }
+    });
+    globalThis.pf1SpellcraftingAttackHookRegistered = true;
+  }
+
+  function buildSpontaneousPotionItemData(actor, state, options = {}) {
+    const core = getActiveItemById(state, state.selectedCoreId);
+    if (!core) throw new Error("Select a Core before brewing.");
+    const totalSP = calculateTotalSP(actor, state);
+    const augmentDetails = [
+      ...getSelectedAugmentDetails(actor, state, "core"),
+      ...getSelectedAugmentDetails(actor, state, "spell"),
+    ];
+    const resolvedAttributes = getResolvedBuiltSpellAttributes(core, totalSP);
+    const customName = String(options.customName || "").trim() || resolvedAttributes.name;
+    const coreSource = typeof core?.toObject === "function" ? core.toObject() : deepCloneData(core);
+    const templateItem = getConsumableTemplateItem(actor);
+    const templateSource = templateItem
+      ? (typeof templateItem.toObject === "function" ? templateItem.toObject() : deepCloneData(templateItem))
+      : null;
+    const itemData = templateSource
+      ? deepCloneData(templateSource)
+      : {
+          name: "",
+          type: "consumable",
+          img: "icons/consumables/potions/potion-bottle-corked-blue.webp",
+          system: {
+            description: { value: "" },
+            actions: [],
+            uses: { value: 1, max: 1, autoDeductChargesCost: "1" },
+            activation: {},
+            duration: {},
+            range: {},
+            save: {},
+          },
+          flags: {},
+        };
+
+    delete itemData._id;
+    delete itemData.id;
+    delete itemData._stats;
+    delete itemData.folder;
+    delete itemData.sort;
+    delete itemData.pack;
+    delete itemData.actions;
+
+    itemData.name = `Draft of ${customName}`;
+    itemData.type = "consumable";
+    itemData.img = coreSource?.img || templateSource?.img || itemData.img || "icons/consumables/potions/potion-bottle-corked-blue.webp";
+    itemData.flags = itemData.flags && typeof itemData.flags === "object" ? itemData.flags : {};
+    itemData.system = itemData.system && typeof itemData.system === "object" ? itemData.system : {};
+    setObjectPathValue(itemData, ["flags", FLAG_SCOPE, "sourceUuid"], String(core.uuid || ""));
+    setObjectPathValue(itemData, ["flags", FLAG_SCOPE, "deleteOnLongRest"], true);
+    setObjectPathValue(itemData, ["flags", FLAG_SCOPE, "brewType"], "draft");
+    setObjectPathValue(itemData, ["system", "description"], itemData.system.description && typeof itemData.system.description === "object" ? itemData.system.description : {});
+    setObjectPathValue(itemData, ["system", "description", "value"], buildPreparedSpellDescriptionHtml(actor, state.spellbookId, core, totalSP, augmentDetails, customName));
+    setObjectPathValue(itemData, ["system", "quantity"], 1);
+    setObjectPathValue(itemData, ["system", "uses", "per"], "single");
+    setObjectPathValue(itemData, ["system", "uses", "value"], 1);
+    setObjectPathValue(itemData, ["system", "uses", "max"], 1);
+    setObjectPathValue(itemData, ["system", "uses", "autoDeductChargesCost"], "1");
+    setObjectPathValue(itemData, ["system", "consumableType"], "potion");
+    if (itemData.flags?.pf1?.spellbook) delete itemData.flags.pf1.spellbook;
+    if (itemData.flags?.spellbook) delete itemData.flags.spellbook;
+    if (itemData.system?.spellbook != null) delete itemData.system.spellbook;
+    if (itemData.system?.spellbookId != null) delete itemData.system.spellbookId;
+    if (itemData.system?.spellbookName != null) delete itemData.system.spellbookName;
+    const sourceActions = getItemActionEntries(coreSource).map((action) => normalizeActionSourceData(action));
+    if (sourceActions.length) {
+      setObjectPathValue(itemData, ["system", "actions"], sourceActions.map((action) => deepCloneData(action)));
+    } else {
+      ensurePrimaryDrinkAction(itemData);
+    }
+    populateBuiltPotionItemAttributes(itemData, core, resolvedAttributes, totalSP);
+    return { core, itemData, totalSP, augmentDetails, resolvedAttributes };
+  }
+
+  function populateBuiltPotionItemAttributes(itemData, core, resolvedAttributes, totalSP) {
+    const systemSchoolKey = toSystemSchoolKey(resolvedAttributes.school);
+    const saveDescription = String(resolvedAttributes.savingThrow || "").trim();
+    const saveType = toSystemSaveType(saveDescription);
+    const attackData = getSpellAttackData(actor, state.spellbookId, resolvedAttributes.school);
+    const saveDc = attackData.formulaText;
+    const castingTime = String(resolvedAttributes.castingTime || "").trim() || "Standard";
+    const durationData = getDurationDataFromDisplay(resolvedAttributes.duration);
+    const activationData = getActivationDataFromCastingTime(castingTime);
+    setObjectPathValue(itemData, ["system", "school"], systemSchoolKey);
+    setObjectPathValue(itemData, ["system", "spellSchool"], systemSchoolKey);
+    setObjectPathValue(itemData, ["system", "spellPointCost"], totalSP);
+    setObjectPathValue(itemData, ["system", "spCost"], totalSP);
+    setObjectPathValue(itemData, ["system", "spellPoints", "cost"], totalSP);
+    setObjectPathValue(itemData, ["system", "castingTime"], castingTime);
+    setObjectPathValue(itemData, ["system", "time"], castingTime);
+    setObjectPathValue(itemData, ["system", "target"], resolvedAttributes.target);
+    setObjectPathValue(itemData, ["system", "targets"], resolvedAttributes.target);
+    setObjectPathValue(itemData, ["system", "savingThrow"], saveDescription);
+    setObjectPathValue(itemData, ["system", "save", "description"], saveDescription);
+    setObjectPathValue(itemData, ["system", "save", "type"], saveType);
+    setObjectPathValue(itemData, ["system", "save", "dc"], saveDc);
+    setObjectPathValue(itemData, ["system", "activation", "cost"], activationData.cost);
+    setObjectPathValue(itemData, ["system", "activation", "type"], activationData.type);
+    setObjectPathValue(itemData, ["system", "duration", "value"], durationData.value);
+    setObjectPathValue(itemData, ["system", "duration", "units"], durationData.units);
+    setObjectPathValue(itemData, ["system", "duration", "concentration"], durationData.concentration);
+    setObjectPathValue(itemData, ["system", "duration", "dismiss"], durationData.dismiss);
+    setObjectPathValue(itemData, ["system", "level"], resolvedAttributes.level);
+    if (itemData.system?.range && typeof itemData.system.range === "object") {
+      setObjectPathValue(itemData, ["system", "range", "value"], resolvedAttributes.range);
+      setObjectPathValue(itemData, ["system", "range", "units"], getObjectPath(core, ["system", "range", "units"]) || "");
+    } else {
+      setObjectPathValue(itemData, ["system", "range"], resolvedAttributes.range);
+    }
+    const actions = ensurePrimaryDrinkAction(itemData);
+    for (const action of actions) {
+      setObjectPathValue(action, ["name"], "Drink");
+      setObjectPathValue(action, ["sp"], totalSP);
+      setObjectPathValue(action, ["spellPointCost"], totalSP);
+      setObjectPathValue(action, ["uses", "spellPointCost"], String(totalSP));
+      setObjectPathValue(action, ["activation", "cost"], activationData.cost);
+      setObjectPathValue(action, ["activation", "type"], activationData.type);
+      setObjectPathValue(action, ["activation", "unchained", "cost"], activationData.cost);
+      setObjectPathValue(action, ["activation", "unchained", "type"], activationData.type);
+      setObjectPathValue(action, ["save", "description"], saveDescription);
+      setObjectPathValue(action, ["save", "type"], saveType);
+      setObjectPathValue(action, ["save", "dc"], saveDc);
+      setObjectPathValue(action, ["duration", "value"], durationData.value);
+      setObjectPathValue(action, ["duration", "units"], durationData.units);
+      setObjectPathValue(action, ["duration", "concentration"], durationData.concentration);
+      setObjectPathValue(action, ["duration", "dismiss"], durationData.dismiss);
+      if (getObjectPath(action, ["target", "value"]) == null || getObjectPath(action, ["target", "value"]) === "") {
+        setObjectPathValue(action, ["target", "value"], resolvedAttributes.target);
+      }
+      if (getObjectPath(action, ["range", "value"]) == null || getObjectPath(action, ["range", "value"]) === "") {
+        setObjectPathValue(action, ["range", "value"], resolvedAttributes.range);
+      }
+    }
+  }
+
   function buildDialogContent(spellbooks, state) {
     const spellbookOptions = spellbooks.map((book) => getSpellbookOptionHtml(book, state.spellbookId)).join("");
     const spellListItems = "<div class=\"brewing-empty\">Select a spellbook to see spells.</div>";
+    const coreListItems = "<div class=\"brewing-empty\">Select a spellbook to see cores.</div>";
+    const coreAugmentsHtml = "<div class=\"brewing-empty\">Select a core to view core augments.</div>";
+    const spellAugmentsHtml = "<div class=\"brewing-empty\">Select a spellbook to view spell augments.</div>";
 
     return `
       <style>
@@ -1602,23 +2503,106 @@
         .brewing-actions button:hover { background: linear-gradient(to bottom, #e4dbc0, #d0c4a6); }
         .brewing-actions button:disabled { background: linear-gradient(to bottom, #b9b19d, #9d9583); border-color: #857d6d; color: #5d564c; cursor: default; opacity: 0.85; }
         .brewing-actions-panel { display: flex; justify-content: center; padding-top: 0.8rem; padding-bottom: 0.8rem; flex: 0 0 auto; }
+        .brewing-mode { display: none; min-height: 0; }
+        .brewing-root.is-prepared .brewing-mode-prepared { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+        .brewing-root.is-spontaneous .brewing-mode-spontaneous { display: grid; grid-template-rows: auto minmax(0, 1fr); row-gap: 1.5rem; flex: 1 1 auto; min-height: 0; }
+        .brewing-root.is-spontaneous { padding: 0.9rem; gap: 0; }
+        .brewcraft-body { min-height: 0; overflow: hidden; display: flex; align-items: stretch; }
+        .brewcraft-grid { display: grid; grid-template-columns: 2fr 3fr 5fr; gap: 1.5rem; width: 100%; height: 100%; min-height: 0; flex: 1 1 auto; align-items: stretch; }
+        .brewcraft-panel { border: 1px solid #7d7668; background: rgba(201, 196, 184, 0.94); padding: 1rem 1.1rem; border-radius: 8px; overflow: hidden; color: #151412; width: 100%; box-sizing: border-box; min-width: 0; min-height: 0; box-shadow: 0 1px 0 rgba(255, 255, 255, 0.18) inset; }
+        .brewcraft-panel h3 { margin: 0 0 0.8rem; padding-bottom: 0.35rem; border-bottom: 1px solid #b85b4d; font-size: 1.05rem; font-weight: 700; color: #2c2a25; }
+        .brewcraft-scrollable-panel { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; height: 100%; }
+        .brewcraft-toolbar { display: grid; grid-template-columns: minmax(290px, 380px) auto auto; align-items: end; gap: 1.25rem; }
+        .brewcraft-actions { display: inline-grid; grid-template-columns: repeat(2, minmax(120px, 150px)); gap: 1.1rem; justify-content: flex-start; width: auto; }
+        .brewcraft-actions button { width: 100%; min-width: 0; padding: 0.5rem 0.75rem; font-size: 0.92rem; font-weight: 600; white-space: nowrap; border: 1px solid #9e916d; border-radius: 4px; background: linear-gradient(to bottom, #ddd4b8, #c9bea0); color: #1c1914; }
+        .brewcraft-actions button:hover { background: linear-gradient(to bottom, #e4dbc0, #d0c4a6); }
+        .brewcraft-actions button:disabled { background: linear-gradient(to bottom, #b9b19d, #9d9583); border-color: #857d6d; color: #5d564c; cursor: default; opacity: 0.85; }
+        .brewcraft-costs { display: grid; grid-template-columns: auto auto auto; column-gap: 1.25rem; row-gap: 0.2rem; align-items: center; padding: 0.65rem 0.85rem; background: rgba(223, 218, 205, 0.95); border: 1px solid #8f8674; border-radius: 6px; color: #111; font-size: 0.98rem; width: 41rem; max-width: 41rem; min-width: 41rem; min-height: 2.35rem; box-sizing: border-box; }
+        .brewcraft-costs div { display: flex; align-items: baseline; gap: 0.5rem; }
+        .brewcraft-costs strong { font-size: 0.95rem; color: #333029; }
+        .brewcraft-costs span { font-size: 1.85rem; font-weight: 700; line-height: 1; display: inline-block; color: #191816; }
+        .brewcraft-school-value { width: 13ch; min-width: 13ch; text-align: left; font-size: 1.25rem; }
+        .brewcraft-core-filter { margin-bottom: 0.8rem; }
+        .brewcraft-core-filter input { width: 100%; min-height: 2rem; padding: 0.35rem 0.5rem; border: 1px solid #8f8673; border-radius: 4px; background: #e4dfd3; color: #161616; font-size: 0.92rem; box-sizing: border-box; }
+        .brewcraft-core-list, .brewcraft-augment-list { flex: 1 1 auto; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem; min-height: 0; padding-right: 0.2rem; }
+        .brewcraft-core-item { display: grid; grid-template-columns: auto minmax(0, 1fr) max-content; align-items: center; gap: 0.65rem; background: rgba(236, 233, 225, 0.82); padding: 0.45rem 0.65rem; border-radius: 4px; color: #111; border: 1px solid #9f9787; font-size: 0.96rem; transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease; cursor: pointer; }
+        .brewcraft-core-item:hover { background: rgba(244, 240, 232, 0.9); border-color: #887d63; }
+        .brewcraft-core-item.selected { background: rgba(173, 220, 182, 0.98); border-color: #1f7a3d; box-shadow: inset 0 0 0 1px rgba(21, 100, 46, 0.34), 0 0 0 1px rgba(31, 122, 61, 0.28), 0 2px 6px rgba(24, 92, 44, 0.18); }
+        .brewcraft-core-item input[type="radio"] { position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0; margin: 0; }
+        .brewcraft-core-icon { width: 2rem; height: 2rem; object-fit: cover; border-radius: 4px; border: 1px solid rgba(89, 82, 66, 0.35); background: rgba(255, 255, 255, 0.75); box-shadow: 0 1px 2px rgba(0,0,0,0.12); }
+        .brewcraft-core-name { min-width: 0; overflow-wrap: anywhere; word-break: break-word; font-weight: 700; }
+        .brewcraft-core-meta { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 0.12rem; text-align: right; min-width: max-content; }
+        .brewcraft-core-school { color: #5a554a; font-size: 0.85rem; font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; }
+        .brewcraft-core-cost { color: #6b4225; font-size: 0.8rem; font-weight: 700; white-space: nowrap; }
+        .brewcraft-augment-group { display: grid; gap: 0.45rem; }
+        .brewcraft-augment-group + .brewcraft-augment-group { margin-top: 0.35rem; padding-top: 0.55rem; border-top: 1px solid rgba(159, 154, 140, 0.5); }
+        .brewcraft-augment-group-title { font-size: 1rem; font-weight: 800; color: #2f2b24; line-height: 1.2; }
+        .brewcraft-augment-group-limitation { margin-top: -0.1rem; font-size: 0.86rem; line-height: 1.28; color: #4a4438; }
+        .brewcraft-augment-entry { padding: 0.65rem 0.8rem; border: 1px solid #9c9485; border-radius: 4px; background: rgba(236, 233, 225, 0.78); color: #111; font-size: 0.91rem; }
+        .brewcraft-augment-entry label { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: start; gap: 0.8rem; }
+        .brewcraft-augment-entry strong { min-width: 2.25rem; padding-top: 0.05rem; color: #171614; }
+        .brewcraft-augment-entry .augment-description { color: #2f2d28; font-size: 0.91rem; line-height: 1.28; }
+        .brewcraft-repeat-control { display: inline-grid; grid-template-columns: auto auto auto; align-items: center; gap: 0.25rem; }
+        .brewcraft-repeat-control button { width: 1.8rem; min-width: 1.8rem; height: 1.8rem; padding: 0; border: 1px solid #978d79; border-radius: 4px; background: #d8cfb4; color: #2b2924; font-size: 1rem; font-weight: 700; line-height: 1; }
+        .brewcraft-repeat-control button:disabled { background: #cfc8b7; border-color: #b4ac98; color: #8d877c; cursor: default; opacity: 0.75; }
+        .brewcraft-repeat-control .repeat-count { width: 2.6rem; min-width: 2.6rem; text-align: center; min-height: 1.8rem; padding: 0.2rem 0.25rem; font-size: 0.86rem; border: 1px solid #978d79; border-radius: 4px; background: #e3ddd1; }
         .ui-dialog-buttonpane { display: none !important; }
       </style>
-      <div id="brewing-root" class="brewing-root">
-        <div class="brewing-panel brewing-top-panel">
-          <div class="brewing-field">
-            <label for="selectedSpellbook">Spellbook</label>
-            <select id="selectedSpellbook">${spellbookOptions}</select>
+      <div id="brewing-root" class="brewing-root is-prepared">
+        <div class="brewing-mode brewing-mode-prepared">
+          <div class="brewing-panel brewing-top-panel">
+            <div class="brewing-field">
+              <label for="selectedSpellbookPrepared">Spellbook</label>
+              <select id="selectedSpellbookPrepared">${spellbookOptions}</select>
+            </div>
+          </div>
+          <div class="brewing-panel brewing-scrollable-panel">
+            <h3>Spells</h3>
+            <div class="brewing-spell-list">${spellListItems}</div>
+          </div>
+          <div class="brewing-panel brewing-actions-panel">
+            <div class="brewing-actions">
+              <button type="button" class="brewing-brew" disabled>Brew</button>
+              <button type="button" class="brewing-cancel">Cancel</button>
+            </div>
           </div>
         </div>
-        <div class="brewing-panel brewing-scrollable-panel">
-          <h3>Spells</h3>
-          <div class="brewing-spell-list">${spellListItems}</div>
-        </div>
-        <div class="brewing-panel brewing-actions-panel">
-          <div class="brewing-actions">
-            <button type="button" class="brewing-brew" disabled>Brew</button>
-            <button type="button" class="brewing-cancel">Cancel</button>
+        <div class="brewing-mode brewing-mode-spontaneous">
+          <div class="brewcraft-panel">
+            <div class="brewcraft-toolbar">
+              <div class="brewing-field">
+                <label for="selectedSpellbookSpontaneous">Spellbook</label>
+                <select id="selectedSpellbookSpontaneous">${spellbookOptions}</select>
+              </div>
+              <div class="brewcraft-costs">
+                <div><strong>Total SP Cost:</strong> <span id="brewcraftTotalSP">0</span></div>
+                <div><strong>Spell Level:</strong> <span id="brewcraftSpellLevel">0</span></div>
+                <div><strong>School:</strong> <span id="brewcraftSpellSchool" class="brewcraft-school-value">None</span></div>
+              </div>
+              <div class="brewcraft-actions">
+                <button type="button" class="brewcraft-brew" disabled>Brew</button>
+                <button type="button" class="brewcraft-cancel">Cancel</button>
+              </div>
+            </div>
+          </div>
+          <div class="brewcraft-body">
+            <div class="brewcraft-grid">
+              <div class="brewcraft-panel brewcraft-scrollable-panel">
+                <h3>Spell Cores</h3>
+                <div class="brewcraft-core-filter">
+                  <input type="text" id="coreFilterInput" value="" placeholder="Filter cores by name" autocomplete="off" />
+                </div>
+                <div class="brewcraft-core-list">${coreListItems}</div>
+              </div>
+              <div class="brewcraft-panel brewcraft-scrollable-panel">
+                <h3>Core Augments</h3>
+                <div id="brewcraftCoreAugmentsContainer" class="brewcraft-augment-list">${coreAugmentsHtml}</div>
+              </div>
+              <div class="brewcraft-panel brewcraft-scrollable-panel">
+                <h3>Spell Augments</h3>
+                <div id="brewcraftSpellAugmentsContainer" class="brewcraft-augment-list">${spellAugmentsHtml}</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1634,9 +2618,10 @@
     const dialogRoot = html.closest(".dialog");
     const eventRoot = dialogRoot.length ? dialogRoot : html;
 
-    eventRoot.off("change", "#selectedSpellbook").on("change", "#selectedSpellbook", async (event) => {
+    eventRoot.off("change", "#selectedSpellbookPrepared, #selectedSpellbookSpontaneous").on("change", "#selectedSpellbookPrepared, #selectedSpellbookSpontaneous", async (event) => {
       state.spellbookId = String(event.target.value || "");
       state.selectedSpellId = null;
+      clearSelectedSpellData(state);
       saveLastSelection();
       await updateDialog(html, state, actor);
     });
@@ -1647,7 +2632,65 @@
       renderButtons(html, state);
     });
 
-    eventRoot.off("click", ".brewing-cancel").on("click", ".brewing-cancel", (event) => {
+    eventRoot.off("input", "#coreFilterInput").on("input", "#coreFilterInput", async (event) => {
+      state.coreFilterText = String(event.target.value || "");
+      const selectedCore = getActiveItemById(state, state.selectedCoreId);
+      const matchesFilter = !selectedCore || filterCoresByName([selectedCore], state.coreFilterText, state).length > 0;
+      if (coreFilterDebounceHandle) clearTimeout(coreFilterDebounceHandle);
+      coreFilterDebounceHandle = setTimeout(() => {
+        if (!matchesFilter) clearSelectedSpellData(state);
+        renderSpontaneousCoreList(html, state);
+        renderSpontaneousAugmentPanels(html, actor, state);
+        renderSpontaneousSummary(html, state);
+        renderButtons(html, state);
+      }, FILTER_INPUT_DEBOUNCE_MS);
+    });
+
+    eventRoot.off("change", "input[name=selectedCore]").on("change", "input[name=selectedCore]", async (event) => {
+      state.selectedCoreId = String(event.target.value || "");
+      state.selectedCoreAugments = {};
+      await updateDialog(html, state, actor);
+    });
+
+    eventRoot.off("change", "input[type=checkbox][data-augment-key]").on("change", "input[type=checkbox][data-augment-key]", async (event) => {
+      const key = event.target.dataset.augmentKey;
+      const type = event.target.dataset.augmentType;
+      const checked = event.target.checked;
+      const selectedCollection = type === "core" ? state.selectedCoreAugments : state.selectedSpellAugments;
+      if (checked) {
+        const repeatCountInput = eventRoot.find(`input.repeat-count[data-augment-key="${key}"]`).first();
+        selectedCollection[key] = { count: Math.max(1, Number(repeatCountInput.val()) || 1) };
+      } else {
+        delete selectedCollection[key];
+      }
+      await updateDialog(html, state, actor);
+    });
+
+    eventRoot.off("change", ".repeat-count").on("change", ".repeat-count", async (event) => {
+      const key = event.target.dataset.augmentKey;
+      const type = event.target.dataset.augmentType;
+      const selectedCollection = type === "core" ? state.selectedCoreAugments : state.selectedSpellAugments;
+      const isSelected = !!selectedCollection[key];
+      const minValue = isSelected ? 1 : 0;
+      const nextValue = Math.min(99, Math.max(minValue, Number(event.target.value) || minValue));
+      event.target.value = nextValue;
+      if (isSelected) selectedCollection[key].count = nextValue;
+      await updateDialog(html, state, actor);
+    });
+
+    eventRoot.off("click", ".repeat-adjust").on("click", ".repeat-adjust", async (event) => {
+      event.preventDefault();
+      const button = event.currentTarget;
+      if (button.disabled) return;
+      const key = button.dataset.augmentKey;
+      const type = button.dataset.augmentType;
+      const selectedCollection = type === "core" ? state.selectedCoreAugments : state.selectedSpellAugments;
+      if (!selectedCollection[key]) return;
+      selectedCollection[key].count = Math.min(99, Math.max(1, (selectedCollection[key].count || 1) + (Number(button.dataset.direction) || 0)));
+      await updateDialog(html, state, actor);
+    });
+
+    eventRoot.off("click", ".brewing-cancel, .brewcraft-cancel").on("click", ".brewing-cancel, .brewcraft-cancel", (event) => {
       event.preventDefault();
       dialog.close();
     });
@@ -1668,11 +2711,52 @@
         ui.notifications.error(err?.message || "The potion could not be brewed.");
       }
     });
+
+    eventRoot.off("click", ".brewcraft-brew").on("click", ".brewcraft-brew", async (event) => {
+      event.preventDefault();
+      if (event.currentTarget.disabled) return;
+      try {
+        saveLastSelection();
+        const createdItem = await addSpontaneousPotionToInventory(actor, state);
+        if (createdItem) {
+          ui.notifications.info(`You brewed ${createdItem.name}.`);
+          dialog.close();
+        }
+      } catch (err) {
+        console.warn("Brewing macro could not create the spontaneous draft.", err);
+        ui.notifications.error(err?.message || "The potion could not be brewed.");
+      }
+    });
   }
 
   async function updateDialog(html, state, actor) {
+    state.preparationMode = getSpellbookPreparationType(actor, state.spellbookId) || "prepared";
+    const isSpontaneous = state.preparationMode === "spontaneous" || state.preparationMode === "hybrid";
+    applyDialogChrome(html, isSpontaneous);
+    const root = html.find("#brewing-root");
+    root.toggleClass("is-prepared", !isSpontaneous);
+    root.toggleClass("is-spontaneous", isSpontaneous);
+
+    html.find("#selectedSpellbookPrepared").val(state.spellbookId);
+    html.find("#selectedSpellbookSpontaneous").val(state.spellbookId);
+
+    if (state.preparationMode === "spontaneous" || state.preparationMode === "hybrid") {
+      await ensureSpontaneousSpellDataLoaded(actor, state);
+      if (!getActiveItemById(state, state.selectedCoreId)) {
+        clearSelectedSpellData(state);
+      }
+      html.find("#coreFilterInput").val(state.coreFilterText || "");
+      renderSpontaneousCoreList(html, state);
+      renderSpontaneousAugmentPanels(html, actor, state);
+      renderSpontaneousSummary(html, state);
+      renderButtons(html, state);
+      return;
+    }
+
     if (state.spellbookId) {
-      state.availableSpells = sortItemsByDisplayName(getSpellbookSpells(actor, state.spellbookId));
+      state.availableSpells = sortItemsByDisplayName(
+        getSpellbookSpells(actor, state.spellbookId).filter((item) => !isAugmentSpell(item)),
+      );
       state.itemLookup = indexItemsBySourceKey(state.availableSpells);
     } else {
       state.availableSpells = [];
@@ -1683,7 +2767,6 @@
       state.selectedSpellId = null;
     }
 
-    html.find("#selectedSpellbook").val(state.spellbookId);
     renderSpellList(html, state);
     renderButtons(html, state);
   }
@@ -1714,7 +2797,90 @@
   }
 
   function renderButtons(html, state) {
-    html.find(".brewing-brew").prop("disabled", !state.selectedSpellId);
+    const preparedEnabled = state.preparationMode !== "spontaneous" && state.preparationMode !== "hybrid" && !!state.selectedSpellId;
+    const spontaneousEnabled = state.preparationMode === "spontaneous" && !!state.selectedCoreId;
+    html.find(".brewing-brew").prop("disabled", !preparedEnabled);
+    html.find(".brewcraft-brew").prop("disabled", !spontaneousEnabled);
+  }
+
+  function renderSpontaneousCoreList(html, state) {
+    const coreContainer = html.find(".brewcraft-core-list");
+    const cores = filterCoresByName(state.availableCores, state.coreFilterText, state);
+    if (state.preparationMode === "hybrid") {
+      coreContainer.html("<div class=\"brewing-empty\">Hybrid spellbooks are not supported until the spellbook is set to Prepared or Spontaneous.</div>");
+      return;
+    }
+    if (!cores.length) {
+      coreContainer.html(`<div class="brewing-empty">${state.coreFilterText ? `No cores start with "${escapeHtml(state.coreFilterText.trim())}".` : "No cores found in the selected spellbook."}</div>`);
+      return;
+    }
+    coreContainer.html(cores.map((core) => {
+      const coreKey = getItemSourceKey(core);
+      const checked = coreKey === state.selectedCoreId ? "checked" : "";
+      const selectedClass = checked ? " selected" : "";
+      const titleText = escapeHtml(getCachedCoreHoverDescription(state, core));
+      const schoolText = escapeHtml(getSpellSchool(core));
+      const spellPointCost = getCoreHoverSpellPointCost(core);
+      const iconSrc = escapeHtml(core?.img || "icons/svg/mystery-man.svg");
+      return `<label class="brewcraft-core-item${selectedClass}" title="${titleText}"><input type="radio" name="selectedCore" value="${coreKey}" ${checked} /><img class="brewcraft-core-icon" src="${iconSrc}" alt="" loading="lazy" /><span class="brewcraft-core-name">${escapeHtml(getCachedDisplaySpellName(state, core))}</span><span class="brewcraft-core-meta"><span class="brewcraft-core-school">${schoolText}</span><span class="brewcraft-core-cost">${spellPointCost} SP</span></span></label>`;
+    }).join(""));
+  }
+
+  function buildCoreAugmentsHtml(actor, state) {
+    const core = getActiveItemById(state, state.selectedCoreId);
+    if (!core) return "<div class=\"brewing-empty\">Select a core to view core augments.</div>";
+    const augmentEntries = parseAugmentLines(getSpellDescription(core), /Core Augments?:/i);
+    if (!augmentEntries.length) return "<div class=\"brewing-empty\">No core augments were detected for this core.</div>";
+    return augmentEntries.map((entry, index) => {
+      const key = `core-${getItemSourceKey(core)}-${index}`;
+      const checked = state.selectedCoreAugments[key] ? "checked" : "";
+      const count = state.selectedCoreAugments[key]?.count || 0;
+      const repeatableHtml = entry.repeatable
+        ? `<div class="brewcraft-repeat-control"><button type="button" class="repeat-adjust" data-direction="-1" data-augment-key="${key}" data-augment-type="core" ${checked ? "" : "disabled"}>-</button><input class="repeat-count" type="number" min="0" max="99" value="${count}" data-augment-key="${key}" data-augment-type="core" ${checked ? "" : "disabled"} /><button type="button" class="repeat-adjust" data-direction="1" data-augment-key="${key}" data-augment-type="core" ${checked ? "" : "disabled"}>+</button></div>`
+        : "";
+      return `<div class="brewcraft-augment-entry"><label><input type="checkbox" data-augment-key="${key}" data-augment-type="core" ${checked} /><strong>${escapeHtml(normalizeDisplayedSpellText(entry.title))}</strong><span class="augment-description">${escapeHtml(normalizeDisplayedSpellText(entry.description))}</span>${repeatableHtml}</label></div>`;
+    }).join("");
+  }
+
+  function buildSpellAugmentsHtml(actor, state) {
+    const augments = state.availableSpellAugments;
+    if (!augments.length) return "<div class=\"brewing-empty\">No spell augments were detected in the selected spellbook.</div>";
+    const entries = augments.flatMap((augmentItem) => parseAugmentLines(getSpellDescription(augmentItem), /Augment|Description:/i).map((entry, index) => ({ augmentItem, entry, index })));
+    if (!entries.length) return "<div class=\"brewing-empty\">No augment options were detected in the available augment spells.</div>";
+    const groupedEntries = entries.reduce((groups, entryData) => {
+      const groupKey = entryData.augmentItem.id;
+      if (!groups.has(groupKey)) groups.set(groupKey, { augmentItem: entryData.augmentItem, entries: [] });
+      groups.get(groupKey).entries.push(entryData);
+      return groups;
+    }, new Map());
+    return Array.from(groupedEntries.values()).map(({ augmentItem, entries: groupEntries }) => {
+      const limitationText = getSpellAugmentLimitation(getSpellDescription(augmentItem));
+      const limitationHtml = limitationText ? `<div class="brewcraft-augment-group-limitation"><strong>Limitation:</strong> ${escapeHtml(limitationText)}</div>` : "";
+      const entryHtml = groupEntries.map(({ entry, index }) => {
+        const key = `spell-${getItemSourceKey(augmentItem)}-${index}`;
+        const checked = state.selectedSpellAugments[key] ? "checked" : "";
+        const count = state.selectedSpellAugments[key]?.count || 0;
+        const repeatableHtml = entry.repeatable
+          ? `<div class="brewcraft-repeat-control"><button type="button" class="repeat-adjust" data-direction="-1" data-augment-key="${key}" data-augment-type="spell" ${checked ? "" : "disabled"}>-</button><input class="repeat-count" type="number" min="0" max="99" value="${count}" data-augment-key="${key}" data-augment-type="spell" ${checked ? "" : "disabled"} /><button type="button" class="repeat-adjust" data-direction="1" data-augment-key="${key}" data-augment-type="spell" ${checked ? "" : "disabled"}>+</button></div>`
+          : "";
+        const title = normalizeDisplayedSpellText(entry.title || `${getDisplaySpellName(augmentItem.name)} (${entry.cost >= 0 ? "+" : ""}${entry.cost})`);
+        return `<div class="brewcraft-augment-entry"><label><input type="checkbox" data-augment-key="${key}" data-augment-type="spell" ${checked} /><strong>${escapeHtml(title)}</strong><span class="augment-description">${escapeHtml(normalizeDisplayedSpellText(entry.description))}</span>${repeatableHtml}</label></div>`;
+      }).join("");
+      return `<div class="brewcraft-augment-group"><div class="brewcraft-augment-group-title">${escapeHtml(getDisplaySpellName(augmentItem.name))}</div>${limitationHtml}${entryHtml}</div>`;
+    }).join("");
+  }
+
+  function renderSpontaneousAugmentPanels(html, actor, state) {
+    html.find("#brewcraftCoreAugmentsContainer").html(buildCoreAugmentsHtml(actor, state));
+    html.find("#brewcraftSpellAugmentsContainer").html(buildSpellAugmentsHtml(actor, state));
+  }
+
+  function renderSpontaneousSummary(html, state) {
+    const totalSP = calculateTotalSP(actor, state);
+    html.find("#brewcraftTotalSP").text(totalSP);
+    html.find("#brewcraftSpellLevel").text(Math.max(0, Math.ceil(totalSP / 2)));
+    const selectedCore = getActiveItemById(state, state.selectedCoreId);
+    html.find("#brewcraftSpellSchool").text(selectedCore ? getSpellSchool(selectedCore) || "None" : "None");
   }
 
   function escapeHtml(value) {
