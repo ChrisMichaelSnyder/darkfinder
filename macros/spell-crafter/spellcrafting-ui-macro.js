@@ -1154,14 +1154,34 @@
   }
 
   function normalizeDisplayedSpellText(value) {
-    return String(value || "")
+    const protectedMatches = [];
+    const protect = (match) => {
+      const token = `__SPELLCRAFTING_PROTECTED_${protectedMatches.length}__`;
+      protectedMatches.push({ token, match });
+      return token;
+    };
+
+    let normalized = String(value || "")
+      .replace(/\bthis(?=\s+(?:ranged|melee)\s+touch\s+attacks?\b)/gi, "these")
+      .replace(/\b(?:a\s+)?(?:ranged|melee)\s+touch\s+attacks?\b/gi, "vibes")
       .replace(/@cl/gi, "SP spent")
+      .replace(/caster level checks?\b/gi, protect)
+      .replace(/negative levels?\b/gi, protect)
+      .replace(/lost levels?\b/gi, protect)
+      .replace(/caster levels?\s+you\s+possess\b/gi, "SP spent")
+      .replace(/levels?\s+you\s+possess\b/gi, "SP spent")
       .replace(/caster levels/gi, "SP spent")
-      .replace(/caster level/gi, "SP spent")
+      .replace(/caster level(?!\s+checks?\b)/gi, "SP spent")
       .replace(/\/levels\b/gi, "/SP spent")
       .replace(/\/level\b/gi, "/SP spent")
       .replace(/\blevels\b/gi, "SP spent")
       .replace(/\blevel\b/gi, "SP spent");
+
+    for (const { token, match } of protectedMatches) {
+      normalized = normalized.replace(token, match);
+    }
+
+    return normalized;
   }
 
   function stripHtmlTags(html) {
@@ -1558,14 +1578,20 @@
     const rawDuration = normalizeDisplayedSpellText(String(durationText || "").trim());
     if (!rawDuration) return rawDuration;
 
-    if (/^@cl\s+rounds?$/i.test(rawDuration)) {
+    if (/^(?:@cl|SP spent)\s+rounds?$/i.test(rawDuration)) {
       return `${totalSP} rounds`;
+    }
+    if (/^(?!1\b)(?:\d+|SP spent)\s+round$/i.test(rawDuration)) {
+      return rawDuration.replace(/\bround$/i, "rounds");
     }
     if (/\bminutes?\b/i.test(rawDuration) || /\bhours?\b/i.test(rawDuration)) {
       return "Concentration";
     }
     if (/\bdays?\b/i.test(rawDuration)) {
       return "24 hours";
+    }
+    if (/^(?!1\b)(?:\d+|SP spent)\s+round$/i.test(rawDuration)) {
+      return rawDuration.replace(/\bround$/i, "rounds");
     }
     return rawDuration;
   }
@@ -3448,7 +3474,9 @@
         .spellcrafting-core-item input[type="radio"] { position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0; margin: 0; }
         .spellcrafting-core-icon { width: 2rem; height: 2rem; object-fit: cover; border-radius: 4px; border: 1px solid rgba(89, 82, 66, 0.35); background: rgba(255, 255, 255, 0.75); box-shadow: 0 1px 2px rgba(0,0,0,0.12); }
         .spellcrafting-core-name { min-width: 0; overflow-wrap: anywhere; word-break: break-word; font-weight: 700; }
-        .spellcrafting-core-school { width: auto; text-align: left; justify-self: end; color: #5a554a; font-size: 0.85rem; font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; }
+        .spellcrafting-core-meta { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 0.12rem; text-align: right; min-width: max-content; }
+        .spellcrafting-core-school { width: auto; text-align: right; justify-self: end; color: #5a554a; font-size: 0.85rem; font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; }
+        .spellcrafting-core-cost { color: #6b4225; font-size: 0.8rem; font-weight: 700; white-space: nowrap; }
         .spellcrafting-augment-list { flex: 1 1 auto; overflow-y: auto; display: flex; flex-direction: column; gap: 0.65rem; min-height: 0; padding-right: 0.2rem; }
         .spellcrafting-augment-group { display: grid; gap: 0.45rem; }
         .spellcrafting-augment-group + .spellcrafting-augment-group { margin-top: 0.35rem; padding-top: 0.55rem; border-top: 1px solid rgba(159, 154, 140, 0.5); }
@@ -3777,8 +3805,9 @@
         const selectedClass = checked ? " selected" : "";
         const titleText = escapeHtml(getCachedCoreHoverDescription(state, core));
         const schoolText = escapeHtml(getSpellSchool(core));
+        const spellPointCost = getCoreHoverSpellPointCost(core, state);
         const iconSrc = escapeHtml(core?.img || "icons/svg/mystery-man.svg");
-        return `<label class="spellcrafting-core-item${selectedClass}" title="${titleText}"><input type="radio" name="selectedCore" value="${coreKey}" ${checked} /><img class="spellcrafting-core-icon" src="${iconSrc}" alt="" loading="lazy" /><span class="spellcrafting-core-name">${escapeHtml(getCachedDisplaySpellName(state, core))}</span><span class="spellcrafting-core-school">${schoolText}</span></label>`;
+        return `<label class="spellcrafting-core-item${selectedClass}" title="${titleText}"><input type="radio" name="selectedCore" value="${coreKey}" ${checked} /><img class="spellcrafting-core-icon" src="${iconSrc}" alt="" loading="lazy" /><span class="spellcrafting-core-name">${escapeHtml(getCachedDisplaySpellName(state, core))}</span><span class="spellcrafting-core-meta"><span class="spellcrafting-core-school">${schoolText}</span><span class="spellcrafting-core-cost">${spellPointCost} SP</span></span></label>`;
       }).join(""));
       return;
     }
