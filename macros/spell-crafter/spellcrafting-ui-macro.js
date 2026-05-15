@@ -18,6 +18,7 @@
   const state = {
     spellbookId: lastSelection.spellbookId || lastSelection.sourceId || spellbooks[0]?.id,
     useLegacyPreparedCores: false,
+    classOnlyLegacyPreparedCores: true,
     coreFilterText: "",
     preparationMode: null,
     selectedCoreId: null,
@@ -986,6 +987,9 @@
       spellbookId: String(state.spellbookId || ""),
       preparationMode: normalizedPreparationMode,
       useLegacyPreparedCores: normalizedPreparationMode === "prepared" ? !!state.useLegacyPreparedCores : false,
+      classOnlyLegacyPreparedCores: normalizedPreparationMode === "prepared" && state.useLegacyPreparedCores
+        ? !!state.classOnlyLegacyPreparedCores
+        : false,
     });
 
     if (!state.spellbookId) {
@@ -1017,7 +1021,9 @@
           setLoadedSpellData(
             state,
             cacheKey,
-            legacyPreparedData.cores.filter((item) => doesLegacySpellMatchSpellbookName(item, spellbookName)),
+            state.classOnlyLegacyPreparedCores
+              ? legacyPreparedData.cores.filter((item) => doesLegacySpellMatchSpellbookName(item, spellbookName))
+              : legacyPreparedData.cores,
             preparedData.augments.filter((item) => isAugmentSpell(item)),
           );
         } else {
@@ -3176,6 +3182,7 @@
   async function promptForPreparedSpellName(actor, state) {
     const core = getActiveItemById(state, state.selectedCoreId);
     if (!core) return null;
+    const defaultName = getDisplaySpellName(core.name) || "";
 
     const content = `
       <div style="display:grid; gap:0.8rem;">
@@ -3183,7 +3190,7 @@
           <input
             id="spellcrafting-custom-name"
             type="text"
-            placeholder="Name your new spell"
+            placeholder="${escapeHtml(defaultName)}"
             style="width:100%; min-height:2.2rem; padding:0.45rem 0.55rem; border:1px solid #8f8673; border-radius:4px;"
           />
         </div>
@@ -3207,7 +3214,7 @@
             callback: (html) => {
               const input = html.find("#spellcrafting-custom-name");
               const chosenName = String(input.val() || "").trim();
-              settle(chosenName || null);
+              settle(chosenName || defaultName || null);
             },
           },
           cancel: {
@@ -3219,17 +3226,8 @@
         close: () => settle(null),
         render: (html) => {
           const input = html.find("#spellcrafting-custom-name");
-          const acceptButton = html.closest(".app").find('[data-button="accept"]');
-          const syncAcceptState = () => {
-            const hasName = String(input.val() || "").trim().length > 0;
-            acceptButton.prop("disabled", !hasName);
-          };
-
-          acceptButton.prop("disabled", true);
-          input.on("input change", syncAcceptState);
           setTimeout(() => {
             input.trigger("focus");
-            syncAcceptState();
           }, 0);
         },
       }).render(true);
@@ -3455,9 +3453,11 @@
         .spellcrafting-panel h3 { margin: 0 0 0.8rem; padding-bottom: 0.35rem; border-bottom: 1px solid #b85b4d; font-size: 1.05rem; font-weight: 700; color: #2c2a25; }
         .spellcrafting-panel-header { display:flex; align-items:flex-start; justify-content:space-between; gap:0.6rem; margin-bottom:0.8rem; }
         .spellcrafting-panel-header h3 { margin: 0; flex: 1 1 auto; min-width: 0; }
+        .spellcrafting-panel-header-controls { display:flex; align-items:center; gap:0.5rem; flex: 0 0 auto; }
         .spellcrafting-inline-toggle { display:inline-flex; align-items:center; gap:0.3rem; font-size:0.74rem; font-weight:700; color:#2f2c25; white-space:nowrap; flex: 0 0 auto; }
         .spellcrafting-inline-toggle input[type="checkbox"] { margin:0; transform: scale(0.85); transform-origin: center; }
         .spellcrafting-inline-toggle.disabled { opacity:0.6; }
+        .spellcrafting-inline-toggle.hidden { display:none; }
         .spellcrafting-core-filter { margin-bottom: 0.8rem; }
         .spellcrafting-core-filter input { width: 100%; min-height: 2rem; padding: 0.35rem 0.5rem; border: 1px solid #8f8673; border-radius: 4px; background: #e4dfd3; color: #161616; font-size: 0.92rem; box-sizing: border-box; }
         .spellcrafting-scrollable-panel { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; height: 100%; }
@@ -3534,13 +3534,19 @@
         <div class="spellcrafting-body">
           <div class="spellcrafting-grid">
             <div class="spellcrafting-panel spellcrafting-scrollable-panel">
-              <div class="spellcrafting-panel-header">
-                <h3>Spell Cores</h3>
+            <div class="spellcrafting-panel-header">
+              <h3>Spell Cores</h3>
+              <div class="spellcrafting-panel-header-controls">
+                <label class="spellcrafting-inline-toggle ${state.useLegacyPreparedCores ? "" : "hidden"}" id="classOnlyLegacyPreparedCoresLabel">
+                  <input type="checkbox" id="classOnlyLegacyPreparedCores" ${state.classOnlyLegacyPreparedCores ? "checked" : ""} />
+                  <span>Class Only</span>
+                </label>
                 <label class="spellcrafting-inline-toggle">
                   <input type="checkbox" id="legacyPreparedCores" ${state.useLegacyPreparedCores ? "checked" : ""} />
                   <span>Legacy</span>
                 </label>
               </div>
+            </div>
               <div class="spellcrafting-core-filter">
                 <input type="text" id="coreFilterInput" value="${escapeHtml(state.coreFilterText || "")}" placeholder="Filter cores by name" autocomplete="off" />
               </div>
@@ -3688,11 +3694,20 @@
 
     eventRoot.off("change", "#legacyPreparedCores").on("change", "#legacyPreparedCores", async (event) => {
       state.useLegacyPreparedCores = event.target.checked;
+      state.classOnlyLegacyPreparedCores = state.useLegacyPreparedCores ? true : false;
       clearSelectedSpellData(state);
       if (state.useLegacyPreparedCores) {
         renderLegacyLoadingState(html);
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
+      await updateDialog(html, spellbooks, state, actor);
+    });
+
+    eventRoot.off("change", "#classOnlyLegacyPreparedCores").on("change", "#classOnlyLegacyPreparedCores", async (event) => {
+      state.classOnlyLegacyPreparedCores = event.target.checked;
+      clearSelectedSpellData(state);
+      renderLegacyLoadingState(html);
+      await new Promise((resolve) => setTimeout(resolve, 0));
       await updateDialog(html, spellbooks, state, actor);
     });
 
@@ -3773,8 +3788,7 @@
         saveLastSelection();
         const customName = await promptForPreparedSpellName(actor, state);
         if (customName == null) return;
-        const addSucceeded = await addBuiltSpellToSpellbook(actor, state, customName);
-        if (addSucceeded) dialog.close();
+        await addBuiltSpellToSpellbook(actor, state, customName);
       } catch (err) {
         console.warn("Spellcrafting macro could not add built spell to spellbook.", err);
         ui.notifications.error(err?.message || "The spell could not be added to the spellbook.");
@@ -3805,6 +3819,13 @@
     legacyToggle.prop("checked", state.useLegacyPreparedCores);
     legacyToggle.prop("disabled", !legacyEnabled);
     legacyToggleLabel.toggleClass("disabled", !legacyEnabled);
+    const classOnlyToggle = html.find("#classOnlyLegacyPreparedCores");
+    const classOnlyToggleLabel = classOnlyToggle.closest(".spellcrafting-inline-toggle");
+    const classOnlyEnabled = legacyEnabled && state.useLegacyPreparedCores;
+    classOnlyToggleLabel.toggleClass("hidden", !state.useLegacyPreparedCores);
+    classOnlyToggle.prop("checked", state.classOnlyLegacyPreparedCores);
+    classOnlyToggle.prop("disabled", !classOnlyEnabled);
+    classOnlyToggleLabel.toggleClass("disabled", !classOnlyEnabled);
     renderCoreList(html, state);
     renderAugmentPanels(html, actor, state);
     renderSpellSummary(html, actor, state);
