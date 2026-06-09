@@ -12,23 +12,21 @@ This repo can now be loaded by Foundry as a module with id `darkfinder`.
 
 Once the module is enabled, these launchers are available:
 
-- `game.modules.get("darkfinder")?.api?.runCheckEndurance()`
-- `game.modules.get("darkfinder")?.api?.runCheckResolve()`
-- `game.modules.get("darkfinder")?.api?.runCheckSanity()`
-- `game.modules.get("darkfinder")?.api?.runReloadFirearm()`
-- `game.modules.get("darkfinder")?.api?.runShortRest()`
-- `game.modules.get("darkfinder")?.api?.openSpellcrafting()`
-- `game.modules.get("darkfinder")?.api?.runSpellAttack()`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/check-endurance/check-endurance.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/check-resolve/check-resolve.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/check-sanity/check-sanity.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/reload-firearm/reload-firearm.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/short-rest/short-rest.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/spell-crafter/spellcrafting-ui-macro.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/spell-crafter/spell-attack.js")`
 
-You can use the helper files in `scripts/macros/` as the command bodies for Foundry launcher macro documents:
+## Macro compendium
 
-- `scripts/macros/run-check-endurance.js`
-- `scripts/macros/run-check-resolve.js`
-- `scripts/macros/run-check-sanity.js`
-- `scripts/macros/run-reload-firearm.js`
-- `scripts/macros/run-short-rest.js`
-- `scripts/macros/open-spellcrafting.js`
-- `scripts/macros/run-spell-attack.js`
+The module now ships a native `Macro` compendium pack:
+
+- `darkfinder.darkfinder-macros`
+
+Use that compendium as the supported source for launcher macros players can drag to hotbars.
 
 ## Spell Cores/Augments compendium
 
@@ -47,27 +45,11 @@ Recommended migration steps:
 1. Create an `Item` compendium pack inside the module named `spell-cores-augments`.
 2. Export or import your existing Spell Cores/Augments items into that pack.
 3. Keep the module pack id as `darkfinder.spell-cores-augments`.
-4. Optionally create a `Macro` compendium pack for launcher macros players can drag to hotbars.
+4. Keep the module macro pack id as `darkfinder.darkfinder-macros`.
 
-## Install by URL release prep
+## Runtime design
 
-For manifest-URL installation, this repo still needs three manual release-time values in `module.json`:
-
-- `url`
-- `manifest`
-- `download`
-
-Recommended GitHub pattern:
-
-- `url`: repository homepage
-- `manifest`: stable raw URL to `module.json`
-- `download`: versioned GitHub Release zip asset
-
-The module is intentionally left without placeholder URLs so the manifest does not advertise fake install metadata before you publish it.
-
-## Why this is a first-pass migration
-
-The current module launchers intentionally reuse the existing macro source files. That keeps behavior stable while giving you a real module entrypoint now. The next pass should move shared helpers, hook registration, and compendium access into proper ES module files under `scripts/`.
+The current macro launchers intentionally reuse the existing macro source files through `executeMacroFile(...)`. That keeps behavior stable while avoiding duplicated wrapper functions in the module API.
 
 ## Repo separation
 

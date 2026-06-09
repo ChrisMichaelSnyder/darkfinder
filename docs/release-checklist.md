@@ -14,15 +14,22 @@ Use this checklist when you are ready to make the first manifest-URL installable
 - Test each launcher in a clean PF1 world.
 - Confirm `reload-firearm` behavior is ready for public use.
 
-## 2. Create the module-owned spell pack
+## 2. Maintain the module-owned packs
 
-- Create a module `Item` compendium pack with id `darkfinder.spell-cores-augments`.
-- Import/export your Spell Cores/Augments entries into that pack.
-- After the pack exists, add its `packs` entry to `module.json`.
+- Keep the module `Macro` compendium pack at id `darkfinder.darkfinder-macros`.
+- Keep the module `Item` compendium pack at id `darkfinder.spell-cores-augments`.
+- Update the native pack contents in `packs/` when launcher macros or Spell Cores/Augments items change.
+- Ensure both packs remain declared in `module.json`.
 
-Suggested manifest entry:
+Suggested manifest entries:
 
 ```json
+{
+  "name": "darkfinder-macros",
+  "label": "Darkfinder Macros",
+  "type": "Macro",
+  "path": "packs/darkfinder-macros"
+},
 {
   "name": "spell-cores-augments",
   "label": "Spell Cores/Augments",
@@ -35,29 +42,17 @@ Suggested manifest entry:
 ## 3. Publish the repo
 
 - Push the repo to GitHub.
-- Decide on your public repo URL.
-- Add release metadata to `module.json`:
-  - `url`
-  - `manifest`
-  - `download`
-
-Suggested pattern:
-
-```json
-"url": "https://github.com/<owner>/darkfinder",
-"manifest": "https://raw.githubusercontent.com/<owner>/darkfinder/main/module.json",
-"download": "https://github.com/<owner>/darkfinder/releases/download/v0.1.0/darkfinder.zip"
-```
+- Confirm `module.json` version and `download` URL match the release you are about to publish.
 
 ## 4. Create a release artifact
 
 - Zip the module contents so the archive extracts to a top-level `darkfinder/` folder containing `module.json`.
-- Create a GitHub Release such as `v0.1.0`.
+- Create a GitHub Release such as `v0.1.4`.
 - Upload the zip asset.
-- Update `module.json` with the matching `download` URL if needed.
+- Update `module.json` with the matching `download` URL before publishing if needed.
 
 ## 5. Test installation
 
 - In a separate Foundry install or clean test profile, install the module by manifest URL.
 - Enable it in a PF1 world.
-- Verify launchers and spell pack loading.
+- Verify macro compendium and spell pack loading.

@@ -8,13 +8,18 @@ This repo now includes a Foundry VTT module manifest at [module.json](/c:/Users/
 
 Current module launchers:
 
-- `game.modules.get("darkfinder")?.api?.runCheckEndurance()`
-- `game.modules.get("darkfinder")?.api?.runCheckResolve()`
-- `game.modules.get("darkfinder")?.api?.runCheckSanity()`
-- `game.modules.get("darkfinder")?.api?.runReloadFirearm()`
-- `game.modules.get("darkfinder")?.api?.runShortRest()`
-- `game.modules.get("darkfinder")?.api?.openSpellcrafting()`
-- `game.modules.get("darkfinder")?.api?.runSpellAttack()`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/check-endurance/check-endurance.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/check-resolve/check-resolve.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/check-sanity/check-sanity.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/reload-firearm/reload-firearm.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/short-rest/short-rest.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/spell-crafter/spellcrafting-ui-macro.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/spell-crafter/spell-attack.js")`
 
-Setup notes and the compendium migration plan are in [docs/module-setup.md](/c:/Users/csnyd/OneDrive/Desktop/Pathfinder/Darkfinder/docs/module-setup.md).
+The supported Foundry-facing entrypoints are now the module API plus the shipped compendiums:
+
+- `darkfinder-macros`
+- `spell-cores-augments`
+
+Setup notes are in [docs/module-setup.md](/c:/Users/csnyd/OneDrive/Desktop/Pathfinder/Darkfinder/docs/module-setup.md).
 Release prep notes for manifest-URL installation are in [docs/release-checklist.md](/c:/Users/csnyd/OneDrive/Desktop/Pathfinder/Darkfinder/docs/release-checklist.md).
