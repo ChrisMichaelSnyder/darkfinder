@@ -1,0 +1,3 @@
+/* Shared module stylesheet placeholder.
+ * Large macro UIs currently inject their own styles; this file gives the module
+ * a stable stylesheet entrypoint for future extracted app chrome. */

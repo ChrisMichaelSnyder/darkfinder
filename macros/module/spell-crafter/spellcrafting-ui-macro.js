@@ -615,12 +615,16 @@
     }) || null;
   }
 
+  function getModuleSpellPack() {
+    return game.packs?.get("darkfinder.spell-cores-augments") || null;
+  }
+
   async function loadPreparedSpellData() {
     if (preparedSpellDataCache) return preparedSpellDataCache;
 
-    const spellPack = findCompendiumPack("Spell Cores/Augments", "Darkfinder");
+    const spellPack = getModuleSpellPack() || findCompendiumPack("Spell Cores/Augments", "Darkfinder");
     if (!spellPack) {
-      throw new Error("Could not find the Darkfinder compendium 'Spell Cores/Augments'.");
+      throw new Error("Could not find a Spell Cores/Augments compendium. Expected darkfinder.spell-cores-augments or a world compendium named 'Spell Cores/Augments'.");
     }
 
     const documents = await spellPack.getDocuments();
@@ -2446,6 +2450,7 @@
     const baseSource = preferTemplateSource
       ? (templateSource || (sourceHasActions(coreSource) ? coreSource : null))
       : (sourceHasActions(coreSource) ? coreSource : templateSource);
+    const usingTemplateActionShell = !sourceHasActions(coreSource) && !!templateSource && baseSource === templateSource;
     const itemData = baseSource
       ? (foundry?.utils?.deepClone ? foundry.utils.deepClone(baseSource) : JSON.parse(JSON.stringify(baseSource)))
       : templateSource
@@ -2475,7 +2480,12 @@
     itemData.img = coreSource?.img || itemData.img || "icons/svg/book.svg";
     itemData.flags = itemData.flags && typeof itemData.flags === "object" ? itemData.flags : {};
     itemData.system = itemData.system && typeof itemData.system === "object" ? itemData.system : {};
-    const sourceActionEntries = getItemActionEntries(itemData).map((action) => deepCloneGeneratedData(action));
+    const sourceActionEntries = sourceHasActions(coreSource)
+      ? getItemActionEntries(coreSource).map((action) => deepCloneGeneratedData(action))
+      : [];
+    if (usingTemplateActionShell) {
+      stripInheritedTemplateActionRollData(itemData);
+    }
     if (core?.uuid) {
       setObjectPathValue(itemData, ["flags", FLAG_SCOPE, "sourceUuid"], String(core.uuid));
     }
@@ -3004,6 +3014,17 @@
     }
   }
 
+  function stripInheritedTemplateActionRollData(itemData) {
+    const actions = normalizeGeneratedActionsToArray(itemData);
+    for (const action of actions) {
+      clearGeneratedActionTemplateData(action);
+      clearGeneratedActionRollData(action);
+      setObjectPathValue(action, ["damage"], {});
+      setObjectPathValue(action, ["healing"], {});
+      setObjectPathValue(action, ["resourceFormula"], "");
+    }
+  }
+
   function sanitizeGeneratedSpellTemplate(itemData, totalSP) {
     itemData.system = itemData.system && typeof itemData.system === "object" ? itemData.system : {};
     itemData.flags = itemData.flags && typeof itemData.flags === "object" ? itemData.flags : {};
@@ -3012,6 +3033,7 @@
     setObjectPathValue(itemData, ["system", "school"], "");
     setObjectPathValue(itemData, ["system", "spellSchool"], "");
     setObjectPathValue(itemData, ["system", "subschool"], "");
+    setObjectPathValue(itemData, ["system", "descriptors"], []);
     setObjectPathValue(itemData, ["system", "types"], "");
     setObjectPathValue(itemData, ["system", "learnedAt"], {});
     setObjectPathValue(itemData, ["system", "domain"], false);
@@ -3337,12 +3359,11 @@
       ui.notifications.warn("Select a Core before casting.");
       return false;
     }
-    const totalSP = calculateTotalSP(actor, state);
+  
     const { itemData } = buildSpellItemData(actor, state, {
       preferTemplateSource: state.preparationMode === "spontaneous",
     });
-
-    await spendSpellbookPoints(actor, state.spellbookId, totalSP);
+  
     return createSpellChatFromTemporaryItem(actor, itemData);
   }
 

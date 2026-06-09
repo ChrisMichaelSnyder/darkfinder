@@ -1,0 +1,42 @@
+{
+  "id": "darkfinder",
+  "title": "Darkfinder",
+  "description": "Darkfinder tools, macros, and compendium-backed utilities for Pathfinder 1e.",
+  "version": "0.1.0",
+  "url": "https://github.com/ChrisMichaelSnyder/darkfinder",
+  "manifest": "https://raw.githubusercontent.com/ChrisMichaelSnyder/darkfinder/main/module.json",
+  "download": "https://github.com/ChrisMichaelSnyder/darkfinder/releases/download/v0.1.0/darkfinder.zip",
+  "authors": [
+    {
+      "name": "csnyd"
+    }
+  ],
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13"
+  },
+  "relationships": {
+    "systems": [
+      {
+        "id": "pf1",
+        "type": "system"
+      }
+    ]
+  },
+  "packs": [
+    {
+      "name": "spell-cores-augments",
+      "label": "Spell Cores/Augments",
+      "type": "Item",
+      "system": "pf1",
+      "path": "packs/spell-cores-augments"
+    }
+  ],
+  "esmodules": [
+    "scripts/module.js"
+  ],
+  "styles": [
+    "styles/darkfinder.css"
+  ],
+  "readme": "README.md"
+}
