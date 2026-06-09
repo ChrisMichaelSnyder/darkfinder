@@ -8,39 +8,46 @@ const MODULE_FLAG_SCOPE = MODULE_ID;
 const MODULE_MACRO_FOLDER_NAME = "Darkfinder";
 const MODULE_MACRO_SPECS = [
   {
-    name: "Darkfinder: Spellcrafting",
-    img: "icons/svg/book.svg",
+    name: "Spellcrafting",
+    img: "icons/sundries/books/book-backed-silver-gold.webp",
     command: 'game.modules.get("darkfinder")?.api?.openSpellcrafting();',
+    legacyNames: ["Darkfinder: Spellcrafting"],
   },
   {
-    name: "Darkfinder: Spell Attack",
+    name: "Spell Attack",
     img: "icons/svg/dice-target.svg",
     command: 'game.modules.get("darkfinder")?.api?.runSpellAttack();',
+    legacyNames: ["Darkfinder: Spell Attack"],
   },
   {
-    name: "Darkfinder: Check Endurance",
-    img: "icons/svg/d20.svg",
+    name: "Endurance Check",
+    img: "icons/magic/control/buff-strength-muscle-damage-orange.webp",
     command: 'game.modules.get("darkfinder")?.api?.runCheckEndurance();',
+    legacyNames: ["Darkfinder: Check Endurance"],
   },
   {
-    name: "Darkfinder: Check Resolve",
-    img: "icons/svg/d20.svg",
+    name: "Resolve Check",
+    img: "systems/pf1/icons/skills/blood_04.jpg",
     command: 'game.modules.get("darkfinder")?.api?.runCheckResolve();',
+    legacyNames: ["Darkfinder: Check Resolve"],
   },
   {
-    name: "Darkfinder: Check Sanity",
-    img: "icons/svg/d20.svg",
+    name: "Sanity Check",
+    img: "icons/commodities/biological/organ-brain-pink-purple.webp",
     command: 'game.modules.get("darkfinder")?.api?.runCheckSanity();',
+    legacyNames: ["Darkfinder: Check Sanity"],
   },
   {
-    name: "Darkfinder: Reload Firearm",
-    img: "icons/svg/pistol.svg",
+    name: "Reload Firearm",
+    img: "icons/weapons/guns/gun-pistol-flintlock-white.webp",
     command: 'game.modules.get("darkfinder")?.api?.runReloadFirearm();',
+    legacyNames: ["Darkfinder: Reload Firearm"],
   },
   {
-    name: "Darkfinder: Short Rest",
-    img: "icons/svg/bed.svg",
+    name: "Short Rest",
+    img: "systems/pf1/icons/skills/green_19.jpg",
     command: 'game.modules.get("darkfinder")?.api?.runShortRest();',
+    legacyNames: ["Darkfinder: Short Rest"],
   },
 ];
 
@@ -118,7 +125,10 @@ async function installWorldMacros({ notify = false } = {}) {
   let skippedCount = 0;
 
   for (const spec of MODULE_MACRO_SPECS) {
-    const existing = existingMacros.get(spec.name) || null;
+    const legacyMatches = (spec.legacyNames || [])
+      .map((legacyName) => existingMacros.get(legacyName))
+      .filter(Boolean);
+    const existing = existingMacros.get(spec.name) || legacyMatches[0] || null;
     const baseData = {
       name: spec.name,
       type: "script",
@@ -146,6 +156,10 @@ async function installWorldMacros({ notify = false } = {}) {
     }
 
     await existing.update(baseData);
+    for (const legacyMacro of legacyMatches) {
+      if (legacyMacro.id === existing.id) continue;
+      await legacyMacro.delete();
+    }
     updatedCount += 1;
   }
 
