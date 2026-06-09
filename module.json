@@ -2,10 +2,10 @@
   "id": "darkfinder",
   "title": "Darkfinder",
   "description": "Darkfinder tools, macros, and compendium-backed utilities for Pathfinder 1e.",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "url": "https://github.com/ChrisMichaelSnyder/darkfinder",
   "manifest": "https://raw.githubusercontent.com/ChrisMichaelSnyder/darkfinder/main/module.json",
-  "download": "https://github.com/ChrisMichaelSnyder/darkfinder/releases/download/v0.1.2/darkfinder.zip",
+  "download": "https://github.com/ChrisMichaelSnyder/darkfinder/releases/download/v0.1.3/darkfinder.zip",
   "authors": [
     {
       "name": "csnyd"
@@ -24,6 +24,12 @@
     ]
   },
   "packs": [
+    {
+      "name": "darkfinder-macros",
+      "label": "Darkfinder Macros",
+      "type": "Macro",
+      "path": "packs/darkfinder-macros"
+    },
     {
       "name": "spell-cores-augments",
       "label": "Spell Cores/Augments",
