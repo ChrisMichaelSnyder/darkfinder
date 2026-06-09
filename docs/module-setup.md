@@ -28,6 +28,25 @@ The module now ships a native `Macro` compendium pack:
 
 Use that compendium as the supported source for launcher macros players can drag to hotbars.
 
+## Setup-page updater
+
+If you do not have SSH or filesystem access to the Foundry host, this repo includes a Playwright automation script that can log into a Foundry setup page and update a specific installed module through the normal UI.
+
+Example:
+
+```powershell
+$env:FOUNDRY_SETUP_URL='https://example.com/setup'
+$env:FOUNDRY_ADMIN_PASSWORD='your-admin-password'
+npm run update:foundry-module -- --module darkfinder
+```
+
+Useful options:
+
+- `--url https://example.com/setup`
+- `--module darkfinder`
+- `--headless false`
+- `--timeout 45000`
+
 ## Spell Cores/Augments compendium
 
 Spellcrafting now looks for a module-owned pack first:

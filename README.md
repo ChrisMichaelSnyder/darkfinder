@@ -21,5 +21,19 @@ The supported Foundry-facing entrypoints are now the module API plus the shipped
 - `darkfinder-macros`
 - `spell-cores-augments`
 
+## Setup automation
+
+This repo also includes a Playwright-based admin updater for Foundry setup pages when you do not have SSH or filesystem access to the host machine.
+
+Example:
+
+```powershell
+$env:FOUNDRY_SETUP_URL='https://carrion.davidleepatrick.com/setup'
+$env:FOUNDRY_ADMIN_PASSWORD='your-admin-password'
+npm run update:foundry-module -- --module darkfinder
+```
+
+The updater logs into the Foundry setup page, opens the Add-on Modules tab, and clicks the update control for the selected module.
+
 Setup notes are in [docs/module-setup.md](/c:/Users/csnyd/OneDrive/Desktop/Pathfinder/Darkfinder/docs/module-setup.md).
 Release prep notes for manifest-URL installation are in [docs/release-checklist.md](/c:/Users/csnyd/OneDrive/Desktop/Pathfinder/Darkfinder/docs/release-checklist.md).

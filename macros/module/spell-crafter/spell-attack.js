@@ -68,12 +68,8 @@
           ${saveOptions.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === String(lastSettings.savingThrow || "") ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
         </select>
       </div>
-      <div class="darkfinder-spell-attack-field">
-        <label for="darkfinder-spell-name">Spell Name</label>
-        <input id="darkfinder-spell-name" type="text" value="${escapeHtml(String(lastSettings.spellName || ""))}" placeholder="Optional" />
-      </div>
       <div class="darkfinder-spell-attack-help">
-        School, saving throw, and spell name are optional. Leaving school blank skips school-specific DC bonuses.
+        School and saving throw are optional. Leaving school blank skips school-specific DC bonuses.
       </div>
     </div>
   `;
@@ -90,7 +86,6 @@
               spellbookId: String(html.find("#darkfinder-spellbook").val() || ""),
               school: String(html.find("#darkfinder-school").val() || "").trim(),
               savingThrow: String(html.find("#darkfinder-save").val() || "").trim(),
-              spellName: String(html.find("#darkfinder-spell-name").val() || "").trim(),
             });
           },
         },
@@ -108,7 +103,6 @@
   saveLastSettings({
     school: submitted.school,
     savingThrow: submitted.savingThrow,
-    spellName: submitted.spellName,
   });
 
   const attackData = getSpellAttackData(actor, submitted.spellbookId, submitted.school);
@@ -117,9 +111,6 @@
   const d20Result = Number(roll.dice?.[0]?.total ?? roll.terms?.find?.((term) => term?.faces === 20)?.total ?? 0);
   const dcBonusTooltip = attackData.dcBonusTotal ? ` + ${attackData.dcBonusTotal} [Spell DC Bonuses]` : "";
   const tooltipText = `${d20Result} [1d20] + ${attackData.casterLevelHalf} [CL/2] + ${attackData.abilityMod} [${attackData.abilityLabel}]${dcBonusTooltip}`;
-  const spellNameHtml = submitted.spellName
-    ? `<div style="margin-top:0.15rem;font-size:0.92rem;font-weight:700;line-height:1.15;color:#3e3424;">${escapeHtml(submitted.spellName)}</div>`
-    : "";
   const saveHtml = submitted.savingThrow
     ? `<span style="margin-top:0.18rem;font-size:0.98rem;font-weight:700;line-height:1.08;color:#3e3424;">${escapeHtml(submitted.savingThrow)}</span>`
     : "";
@@ -128,7 +119,6 @@
     <div class="spellcrafting-spell-attack-result" style="display:flex;justify-content:center;padding:0.15rem 0;">
       <div title="${escapeHtml(tooltipText)}" style="min-width:208px;max-width:100%;padding:0.75rem 0.85rem;border:1px solid #b6a16e;border-radius:8px;background:linear-gradient(180deg, #f6f1e5 0%, #e8dfcf 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.55), 0 2px 5px rgba(0,0,0,0.08);text-align:center;cursor:help;">
         <div style="font-size:0.7rem;font-weight:800;letter-spacing:0.07em;text-transform:uppercase;color:#6b5c3d;">Spell Attack</div>
-        ${spellNameHtml}
         <div style="margin-top:0.22rem;display:flex;flex-direction:column;align-items:center;justify-content:center;">
           <span class="spellcrafting-spell-attack-total" style="font-weight:900;font-size:2rem;line-height:1;color:#1f1a12;">${escapeHtml(String(roll.total))}</span>
           ${saveHtml}

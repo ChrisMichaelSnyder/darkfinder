@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "scripts": {
+    "update:foundry-module": "node scripts/admin/update-foundry-module.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.60.0"
+  }
+}
