@@ -4,6 +4,46 @@ const launcherState = {
   cache: new Map(),
 };
 
+const MODULE_FLAG_SCOPE = MODULE_ID;
+const MODULE_MACRO_FOLDER_NAME = "Darkfinder";
+const MODULE_MACRO_SPECS = [
+  {
+    name: "Darkfinder: Spellcrafting",
+    img: "icons/svg/book.svg",
+    command: 'game.modules.get("darkfinder")?.api?.openSpellcrafting();',
+  },
+  {
+    name: "Darkfinder: Spell Attack",
+    img: "icons/svg/dice-target.svg",
+    command: 'game.modules.get("darkfinder")?.api?.runSpellAttack();',
+  },
+  {
+    name: "Darkfinder: Check Endurance",
+    img: "icons/svg/d20.svg",
+    command: 'game.modules.get("darkfinder")?.api?.runCheckEndurance();',
+  },
+  {
+    name: "Darkfinder: Check Resolve",
+    img: "icons/svg/d20.svg",
+    command: 'game.modules.get("darkfinder")?.api?.runCheckResolve();',
+  },
+  {
+    name: "Darkfinder: Check Sanity",
+    img: "icons/svg/d20.svg",
+    command: 'game.modules.get("darkfinder")?.api?.runCheckSanity();',
+  },
+  {
+    name: "Darkfinder: Reload Firearm",
+    img: "icons/svg/pistol.svg",
+    command: 'game.modules.get("darkfinder")?.api?.runReloadFirearm();',
+  },
+  {
+    name: "Darkfinder: Short Rest",
+    img: "icons/svg/bed.svg",
+    command: 'game.modules.get("darkfinder")?.api?.runShortRest();',
+  },
+];
+
 function getModuleBasePath() {
   return `/modules/${MODULE_ID}`;
 }
@@ -36,6 +76,96 @@ async function executeMacroFile(relativePath, thisArg = null) {
 
 function getPack(packName) {
   return game.packs.get(`${MODULE_ID}.${packName}`) || null;
+}
+
+function getManagedMacroFlagData(spec) {
+  return {
+    managed: true,
+    launcher: true,
+    macroName: spec.name,
+  };
+}
+
+function getExistingManagedMacros() {
+  return (game.macros || []).filter((macro) => (
+    macro?.type === "script"
+    && macro?.getFlag?.(MODULE_FLAG_SCOPE, "managed") === true
+  ));
+}
+
+async function ensureMacroFolder() {
+  const existingFolder = (game.folders || []).find((folder) => (
+    folder?.type === "Macro" && folder?.name === MODULE_MACRO_FOLDER_NAME
+  ));
+  if (existingFolder) return existingFolder;
+
+  return Folder.create({
+    name: MODULE_MACRO_FOLDER_NAME,
+    type: "Macro",
+    color: "#7a6f54",
+  });
+}
+
+async function installWorldMacros({ notify = false } = {}) {
+  if (!game.user?.isGM) {
+    throw new Error("Only a GM can install Darkfinder world macros.");
+  }
+
+  const folder = await ensureMacroFolder();
+  const existingMacros = new Map((game.macros || []).map((macro) => [macro.name, macro]));
+  let createdCount = 0;
+  let updatedCount = 0;
+  let skippedCount = 0;
+
+  for (const spec of MODULE_MACRO_SPECS) {
+    const existing = existingMacros.get(spec.name) || null;
+    const baseData = {
+      name: spec.name,
+      type: "script",
+      img: spec.img,
+      command: spec.command,
+      folder: folder?.id || null,
+      ownership: {
+        default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER,
+      },
+      flags: {
+        [MODULE_FLAG_SCOPE]: getManagedMacroFlagData(spec),
+      },
+    };
+
+    if (!existing) {
+      await Macro.create(baseData);
+      createdCount += 1;
+      continue;
+    }
+
+    const isManagedMacro = existing.getFlag?.(MODULE_FLAG_SCOPE, "managed") === true;
+    if (!isManagedMacro) {
+      skippedCount += 1;
+      continue;
+    }
+
+    await existing.update(baseData);
+    updatedCount += 1;
+  }
+
+  if (notify) {
+    const summary = [
+      createdCount ? `${createdCount} created` : "",
+      updatedCount ? `${updatedCount} updated` : "",
+      skippedCount ? `${skippedCount} skipped` : "",
+    ].filter(Boolean).join(", ");
+    ui.notifications.info(summary
+      ? `Darkfinder macros synced: ${summary}.`
+      : "Darkfinder macros were already up to date.");
+  }
+
+  return {
+    createdCount,
+    updatedCount,
+    skippedCount,
+    totalManagedMacros: getExistingManagedMacros().length,
+  };
 }
 
 async function openSpellcrafting() {
@@ -78,6 +208,7 @@ function registerApi() {
     getModuleBasePath,
     getMacroUrl,
     getPack,
+    installWorldMacros,
     executeMacroFile,
     openSpellcrafting,
     runSpellAttack,
@@ -99,6 +230,7 @@ export {
   getMacroUrl,
   getModuleBasePath,
   getPack,
+  installWorldMacros,
   openSpellcrafting,
   registerApi,
   runSpellAttack,
