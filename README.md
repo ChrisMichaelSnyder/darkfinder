@@ -12,13 +12,14 @@ It also includes a small runtime API under [scripts/module.js](/abs/path/c:/User
 
 Current module launchers:
 
-- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/check-endurance/check-endurance.js")`
-- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/check-resolve/check-resolve.js")`
-- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/check-sanity/check-sanity.js")`
-- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/reload-firearm/reload-firearm.js")`
-- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/short-rest/short-rest.js")`
-- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/spell-crafter/spellcrafting-ui-macro.js")`
-- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/spell-crafter/spell-attack.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/player-macros/check-endurance/check-endurance.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/player-macros/check-resolve/check-resolve.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/player-macros/check-sanity/check-sanity.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/player-macros/reload-firearm/reload-firearm.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/player-macros/short-rest/short-rest.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/player-macros/spell-crafter/spellcrafting-ui-macro.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/player-macros/spell-crafter/spell-attack.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/gm-macros/initiative-fix/initiative-fix.js")`
 
 The supported Foundry-facing entrypoints are now the module API plus the shipped compendiums:
 
