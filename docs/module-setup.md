@@ -12,21 +12,23 @@ This repo can now be loaded by Foundry as a module with id `darkfinder`.
 
 Once the module is enabled, these launchers are available:
 
-- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/check-endurance/check-endurance.js")`
-- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/check-resolve/check-resolve.js")`
-- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/check-sanity/check-sanity.js")`
-- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/reload-firearm/reload-firearm.js")`
-- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/short-rest/short-rest.js")`
-- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/spell-crafter/spellcrafting-ui-macro.js")`
-- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/module/spell-crafter/spell-attack.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/player-macros/check-endurance/check-endurance.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/player-macros/check-resolve/check-resolve.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/player-macros/check-sanity/check-sanity.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/player-macros/reload-firearm/reload-firearm.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/player-macros/short-rest/short-rest.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/player-macros/spell-crafter/spellcrafting-ui-macro.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/player-macros/spell-crafter/spell-attack.js")`
+- `game.modules.get("darkfinder")?.api?.executeMacroFile("macros/gm-macros/initiative-fix/initiative-fix.js")`
 
 ## Macro compendium
 
-The module now ships a native `Macro` compendium pack:
+The module now ships native `Macro` compendium packs:
 
-- `darkfinder.darkfinder-macros`
+- `darkfinder.darkfinder-player-macros`
+- `darkfinder.darkfinder-gm-macros`
 
-Use that compendium as the supported source for launcher macros players can drag to hotbars.
+Use the player pack as the supported source for launcher macros players can drag to hotbars. The GM pack is intended for GM-only launcher macros.
 
 ## Setup-page updater
 
@@ -64,7 +66,7 @@ Recommended migration steps:
 1. Create an `Item` compendium pack inside the module named `spell-cores-augments`.
 2. Export or import your existing Spell Cores/Augments items into that pack.
 3. Keep the module pack id as `darkfinder.spell-cores-augments`.
-4. Keep the module macro pack id as `darkfinder.darkfinder-macros`.
+4. Keep the module macro pack ids as `darkfinder.darkfinder-player-macros` and `darkfinder.darkfinder-gm-macros`.
 
 ## Runtime design
 
@@ -72,6 +74,30 @@ The current macro launchers intentionally reuse the existing macro source files 
 
 ## Repo separation
 
-Reusable module macros now live under `macros/module/`.
+Reusable player-visible module macros now live under `macros/player-macros/`.
+
+GM-only shipped module macros now live under `macros/gm-macros/`.
 
 Campaign-specific or excluded content now lives under `macros/non-module/`.
+
+## Macro pack maintenance
+
+The shipped macro packs are regenerated from the folder layout:
+
+- `macros/player-macros/` -> `packs/darkfinder-player-macros`
+- `macros/gm-macros/` -> `packs/darkfinder-gm-macros`
+- `macros/non-module/` is excluded
+
+Commands:
+
+- `npm run sync:macro-compendiums`
+- `npm run check:macro-layout`
+- `npm run prepare:macro-packs`
+
+Optional local enforcement:
+
+```powershell
+git config core.hooksPath .githooks
+```
+
+That enables the tracked pre-push hook, which syncs and validates the shipped macro packs before a push is allowed to proceed.

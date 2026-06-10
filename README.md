@@ -23,7 +23,8 @@ Current module launchers:
 
 The supported Foundry-facing entrypoints are now the module API plus the shipped compendiums:
 
-- `darkfinder-macros`
+- `darkfinder-player-macros`
+- `darkfinder-gm-macros`
 - `spell-cores-augments`
 
 ## Setup automation
@@ -52,6 +53,30 @@ The multi-server wrapper targets these setup URLs by default:
 - `https://carrion.davidleepatrick.com/setup`
 - `https://nightfall.davidleepatrick.com/setup`
 - `https://whatif.davidleepatrick.com/setup`
+
+## Macro pack enforcement
+
+Shipped macro compendiums are derived from folder layout:
+
+- `macros/player-macros/` -> `packs/darkfinder-player-macros`
+- `macros/gm-macros/` -> `packs/darkfinder-gm-macros`
+- `macros/non-module/` is never shipped
+
+Useful commands:
+
+```powershell
+npm run sync:macro-compendiums
+npm run check:macro-layout
+npm run prepare:macro-packs
+```
+
+This repo also includes a tracked `.githooks/pre-push` hook. If you run:
+
+```powershell
+git config core.hooksPath .githooks
+```
+
+pushes will stop if the compendium packs are out of sync with the macro folder layout.
 
 Setup notes are in [docs/module-setup.md](/c:/Users/csnyd/OneDrive/Desktop/Pathfinder/Darkfinder/docs/module-setup.md).
 Release prep notes for manifest-URL installation are in [docs/release-checklist.md](/c:/Users/csnyd/OneDrive/Desktop/Pathfinder/Darkfinder/docs/release-checklist.md).

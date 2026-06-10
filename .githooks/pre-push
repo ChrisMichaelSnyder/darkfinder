@@ -1,0 +1,23 @@
+#!/usr/bin/env sh
+set -eu
+
+echo "Syncing shipped macro compendiums..."
+node scripts/admin/sync-macro-compendiums.mjs
+
+echo "Validating macro layout..."
+node scripts/admin/check-macro-layout.mjs
+
+if ! git diff --quiet -- \
+  packs/darkfinder-player-macros \
+  packs/darkfinder-gm-macros \
+  module.json \
+  README.md \
+  docs/module-setup.md \
+  docs/release-checklist.md
+then
+  echo "Pre-push check stopped the push because tracked files changed during sync or still need to be committed."
+  echo "Review and commit the updated pack files before pushing."
+  exit 1
+fi
+
+echo "Pre-push macro checks passed."

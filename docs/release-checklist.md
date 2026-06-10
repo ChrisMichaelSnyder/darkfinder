@@ -11,24 +11,43 @@ Use this checklist when you are ready to make the first manifest-URL installable
   - `reload-firearm`
   - `short-rest`
   - `spell-crafter`
+  - approved `gm-macros` content only
 - Test each launcher in a clean PF1 world.
 - Confirm `reload-firearm` behavior is ready for public use.
 
 ## 2. Maintain the module-owned packs
 
-- Keep the module `Macro` compendium pack at id `darkfinder.darkfinder-macros`.
+- Keep the module `Macro` compendium packs at ids `darkfinder.darkfinder-player-macros` and `darkfinder.darkfinder-gm-macros`.
 - Keep the module `Item` compendium pack at id `darkfinder.spell-cores-augments`.
 - Update the native pack contents in `packs/` when launcher macros or Spell Cores/Augments items change.
+- Confirm the GM pack only contains GM-only macros and that its manifest ownership hides it from Players and Trusted Players.
 - Ensure both packs remain declared in `module.json`.
+- Run `npm run prepare:macro-packs` before release packaging.
 
 Suggested manifest entries:
 
 ```json
 {
-  "name": "darkfinder-macros",
-  "label": "Darkfinder Macros",
+  "name": "darkfinder-player-macros",
+  "label": "Darkfinder Player Macros",
   "type": "Macro",
-  "path": "packs/darkfinder-macros"
+  "path": "packs/darkfinder-player-macros",
+  "ownership": {
+    "PLAYER": "OBSERVER",
+    "TRUSTED": "OBSERVER",
+    "ASSISTANT": "OWNER"
+  }
+},
+{
+  "name": "darkfinder-gm-macros",
+  "label": "Darkfinder GM Macros",
+  "type": "Macro",
+  "path": "packs/darkfinder-gm-macros",
+  "ownership": {
+    "PLAYER": "NONE",
+    "TRUSTED": "NONE",
+    "ASSISTANT": "OWNER"
+  }
 },
 {
   "name": "spell-cores-augments",

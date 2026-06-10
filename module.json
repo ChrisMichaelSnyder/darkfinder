@@ -25,10 +25,26 @@
   },
   "packs": [
     {
-      "name": "darkfinder-macros",
-      "label": "Darkfinder Macros",
+      "name": "darkfinder-player-macros",
+      "label": "Darkfinder Player Macros",
       "type": "Macro",
-      "path": "packs/darkfinder-macros"
+      "path": "packs/darkfinder-player-macros",
+      "ownership": {
+        "PLAYER": "OBSERVER",
+        "TRUSTED": "OBSERVER",
+        "ASSISTANT": "OWNER"
+      }
+    },
+    {
+      "name": "darkfinder-gm-macros",
+      "label": "Darkfinder GM Macros",
+      "type": "Macro",
+      "path": "packs/darkfinder-gm-macros",
+      "ownership": {
+        "PLAYER": "NONE",
+        "TRUSTED": "NONE",
+        "ASSISTANT": "OWNER"
+      }
     },
     {
       "name": "spell-cores-augments",
