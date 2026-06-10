@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { ClassicLevel } from "classic-level";
 import { macroPackConfig, macroRoots } from "./macro-compendium-config.mjs";
@@ -26,15 +27,26 @@ function collectJsFiles(root) {
 }
 
 async function readPackDocuments(folder) {
-  const db = new ClassicLevel(path.resolve(folder), { valueEncoding: "utf8" });
+  const sourceFolder = path.resolve(folder);
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "darkfinder-pack-check-"));
+  const tempFolder = path.join(tempRoot, path.basename(sourceFolder));
+
+  fs.cpSync(sourceFolder, tempFolder, { recursive: true });
+
+  const db = new ClassicLevel(tempFolder, { valueEncoding: "utf8" });
   await db.open();
-  const rows = [];
-  for await (const [key, value] of db.iterator()) {
-    if (!String(key).startsWith("!macros!")) continue;
-    rows.push(JSON.parse(value));
+
+  try {
+    const rows = [];
+    for await (const [key, value] of db.iterator()) {
+      if (!String(key).startsWith("!macros!")) continue;
+      rows.push(JSON.parse(value));
+    }
+    return rows;
+  } finally {
+    await db.close();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
   }
-  await db.close();
-  return rows;
 }
 
 function fail(messages) {

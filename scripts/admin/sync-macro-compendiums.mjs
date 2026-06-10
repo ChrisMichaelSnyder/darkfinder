@@ -3,24 +3,25 @@ import path from "node:path";
 import { ClassicLevel } from "classic-level";
 import { macroPackConfig } from "./macro-compendium-config.mjs";
 
+const STABLE_DOCUMENT_STATS = {
+  coreVersion: "13.346",
+  systemId: null,
+  systemVersion: null,
+  createdTime: 0,
+  modifiedTime: 0,
+  lastModifiedBy: null,
+  compendiumSource: null,
+  duplicateSource: null,
+  exportSource: null,
+};
+
 function createMacroDocument(entry) {
-  const now = Date.now();
   return {
     _id: entry.id,
     name: entry.name,
     type: "script",
     command: `game.modules.get("darkfinder")?.api?.executeMacroFile("${entry.relativePath}");`,
-    _stats: {
-      coreVersion: "13.346",
-      systemId: null,
-      systemVersion: null,
-      createdTime: now,
-      modifiedTime: now,
-      lastModifiedBy: null,
-      compendiumSource: null,
-      duplicateSource: null,
-      exportSource: null,
-    },
+    _stats: STABLE_DOCUMENT_STATS,
     img: entry.img,
     scope: "global",
     folder: null,
@@ -48,6 +49,12 @@ async function rebuildPack(folder, entries) {
   }
 
   await db.close();
+
+  // LevelDB log files are runtime diagnostics and can churn between identical
+  // rebuilds, so strip them from the shipped pack to keep the repo stable.
+  for (const transientFile of ["LOG", "LOG.old"]) {
+    fs.rmSync(path.join(folder, transientFile), { force: true });
+  }
 }
 
 async function main() {
