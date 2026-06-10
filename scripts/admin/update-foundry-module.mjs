@@ -38,19 +38,85 @@ function toNumber(value, fallback) {
   return Number.isFinite(numeric) ? numeric : fallback;
 }
 
+function normalizeSetupUrl(rawUrl) {
+  const parsed = new URL(rawUrl);
+  parsed.pathname = "/setup";
+  parsed.search = "";
+  parsed.hash = "";
+  return parsed.toString();
+}
+
+async function waitForAnyLocator(locators, timeoutMs) {
+  await Promise.race(locators.map((locator) => (
+    locator.waitFor({ state: "visible", timeout: timeoutMs }).catch(() => null)
+  )));
+}
+
+async function waitForSetupState(page, timeoutMs) {
+  await waitForAnyLocator([
+    page.locator("#setup-menu"),
+    page.locator('input[name="adminPassword"]'),
+    page.locator('button[data-action="yes"]'),
+    page.locator("form#join-game-form button").filter({ hasText: "Return to Setup" }),
+  ], timeoutMs);
+}
+
 async function maybeAuthenticate(page, password) {
-  const passwordField = page.locator('input[name="adminPassword"]');
+  const passwordField = page.locator('input[name="adminPassword"]').first();
+  await waitForAnyLocator([
+    passwordField,
+    page.locator("#setup-menu"),
+    page.locator('button[data-action="yes"]'),
+  ], 10000);
+
   if (!(await passwordField.isVisible().catch(() => false))) return false;
 
   await passwordField.fill(password);
-  await Promise.all([
-    page.waitForLoadState("networkidle"),
-    page.click('button[type="submit"][value="adminAuth"]'),
-  ]);
+  const authForm = passwordField.locator("xpath=ancestor::form[1]");
+  const submitButton = authForm.locator('button[type="submit"]').first();
+  if (await submitButton.isVisible().catch(() => false)) {
+    await submitButton.click();
+  } else {
+    await passwordField.press("Enter");
+  }
+  await waitForSetupState(page, 15000);
   return true;
 }
 
+async function maybeConfirmReturnToSetup(page, timeoutMs) {
+  const confirmYes = page.locator('button[data-action="yes"]').first();
+  if (!(await confirmYes.isVisible().catch(() => false))) return false;
+  await confirmYes.click();
+  await waitForSetupState(page, timeoutMs);
+  return true;
+}
+
+async function maybeOpenJoinSetup(page, timeoutMs) {
+  const returnControl = page.locator("form#join-game-form button").filter({ hasText: "Return to Setup" }).first();
+  if (!(await returnControl.isVisible().catch(() => false))) return false;
+  await returnControl.click();
+  await waitForSetupState(page, timeoutMs);
+  return true;
+}
+
+async function navigateToSetup(page, url, timeoutMs) {
+  const setupUrl = normalizeSetupUrl(url);
+  await page.goto(setupUrl, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+  await waitForSetupState(page, timeoutMs);
+  if (page.url().includes("/setup") || page.url().includes("/auth")) return;
+
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+  await waitForSetupState(page, timeoutMs);
+}
+
 async function waitForSetupMenu(page, timeoutMs) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (await page.locator("#setup-menu").isVisible().catch(() => false)) return;
+    await maybeConfirmReturnToSetup(page, 2000).catch(() => false);
+    await maybeAuthenticate(page, process.env.FOUNDRY_ADMIN_PASSWORD || "").catch(() => false);
+    await maybeOpenJoinSetup(page, 2000).catch(() => false);
+    await page.waitForTimeout(1000);
+  }
   await page.locator("#setup-menu").waitFor({ state: "visible", timeout: timeoutMs });
 }
 
@@ -115,7 +181,12 @@ async function main() {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1200 } });
 
   try {
-    await page.goto(url, { waitUntil: "networkidle", timeout: timeoutMs });
+    process.env.FOUNDRY_ADMIN_PASSWORD = password;
+    await navigateToSetup(page, url, timeoutMs);
+    await maybeOpenJoinSetup(page, timeoutMs).catch(() => false);
+    await maybeConfirmReturnToSetup(page, timeoutMs).catch(() => false);
+    await maybeAuthenticate(page, password);
+    await maybeConfirmReturnToSetup(page, timeoutMs).catch(() => false);
     await maybeAuthenticate(page, password);
     await waitForSetupMenu(page, timeoutMs);
     await openModulesTab(page);
