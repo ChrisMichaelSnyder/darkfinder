@@ -38,6 +38,10 @@ function toNumber(value, fallback) {
   return Number.isFinite(numeric) ? numeric : fallback;
 }
 
+function normalizeText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function normalizeSetupUrl(rawUrl) {
   const parsed = new URL(rawUrl);
   parsed.pathname = "/setup";
@@ -153,6 +157,15 @@ async function openModulesTab(page) {
   await page.locator('#setup-packages section[data-group="primary"][data-tab="modules"].active').waitFor({ state: "visible" });
 }
 
+async function openWorldsTab(page) {
+  await dismissTourOverlay(page);
+  const tab = page.locator('#setup-packages-header [data-group="primary"][data-tab="worlds"]');
+  await tab.click({ force: true }).catch(async () => {
+    await tab.evaluate((node) => node.click());
+  });
+  await page.locator('#setup-packages section[data-group="primary"][data-tab="worlds"].active').waitFor({ state: "visible" });
+}
+
 async function collectNotificationTexts(page) {
   return page.locator("#notifications .notification p").evaluateAll((nodes) => (
     nodes.map((node) => node.textContent?.trim() || "").filter(Boolean)
@@ -192,11 +205,74 @@ async function updateModule(page, moduleId, timeoutMs) {
   return { moduleId, packageTitle, notification };
 }
 
+async function detectCurrentWorldName(page, url, timeoutMs) {
+  try {
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+    await page.waitForTimeout(2000);
+    const bodyText = await page.locator("body").innerText().catch(() => "");
+    const lines = String(bodyText || "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const ignored = new Set([
+      "Foundry Virtual Tabletop",
+      "Join Game Session",
+      "Game Details",
+      "Return to Setup",
+      "Administrator Access Required",
+      "Critical Failure!",
+      "LOG IN",
+      "GO BACK",
+    ].map(normalizeText));
+    return lines.find((line) => {
+      const normalized = normalizeText(line);
+      if (!normalized || ignored.has(normalized)) return false;
+      if (/^version\s+\d+/i.test(line)) return false;
+      if (/^there is currently no active game session/i.test(line)) return false;
+      if (/^there is not currently an active game/i.test(line)) return false;
+      return true;
+    }) || "";
+  } catch {
+    return "";
+  }
+}
+
+async function launchWorld(page, worldSearch, timeoutMs) {
+  await openWorldsTab(page);
+
+  const worldRows = page.locator("#worlds-list .package.world");
+  const rowCount = await worldRows.count();
+  const normalizedSearch = normalizeText(worldSearch);
+
+  for (let index = 0; index < rowCount; index += 1) {
+    const row = worldRows.nth(index);
+    const packageId = normalizeText(await row.getAttribute("data-package-id"));
+    const rowText = normalizeText(await row.innerText().catch(() => ""));
+    if (!normalizedSearch || (!packageId.includes(normalizedSearch) && !rowText.includes(normalizedSearch))) continue;
+
+    const beforeTexts = await collectNotificationTexts(page);
+    const launchControl = row.locator('[data-action="worldLaunch"]').first();
+    await launchControl.click({ force: true }).catch(async () => {
+      await launchControl.evaluate((node) => node.click());
+    });
+    const notification = await waitForNewNotification(page, beforeTexts, timeoutMs).catch(() => "");
+    return {
+      worldSearch,
+      matchedWorldId: packageId,
+      notification,
+    };
+  }
+
+  throw new Error(`No world matching "${worldSearch}" was found on the setup page.`);
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const url = String(args.url || process.env.FOUNDRY_SETUP_URL || "").trim();
   const password = String(args.password || process.env.FOUNDRY_ADMIN_PASSWORD || "").trim();
   const moduleId = String(args.module || process.env.FOUNDRY_MODULE_ID || "darkfinder").trim();
+  const explicitLaunchWorld = String(args["launch-world"] || process.env.FOUNDRY_LAUNCH_WORLD || "").trim();
+  const relaunchCurrentWorld = toBoolean(args["relaunch-current-world"] ?? process.env.FOUNDRY_RELAUNCH_CURRENT_WORLD, true);
   const headless = toBoolean(args.headless ?? process.env.FOUNDRY_HEADLESS, true);
   const timeoutMs = toNumber(args.timeout ?? process.env.FOUNDRY_TIMEOUT_MS, 30000);
 
@@ -208,6 +284,9 @@ async function main() {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1200 } });
 
   try {
+    const requestedWorld = explicitLaunchWorld || (relaunchCurrentWorld
+      ? await detectCurrentWorldName(page, url, timeoutMs)
+      : "");
     process.env.FOUNDRY_ADMIN_PASSWORD = password;
     await navigateToSetup(page, url, timeoutMs);
     await maybeOpenJoinSetup(page, timeoutMs).catch(() => false);
@@ -218,11 +297,17 @@ async function main() {
     await waitForSetupMenu(page, timeoutMs);
     await openModulesTab(page);
     const result = await updateModule(page, moduleId, timeoutMs);
+    const launchResult = requestedWorld
+      ? await launchWorld(page, requestedWorld, timeoutMs)
+      : null;
     console.log(JSON.stringify({
       url,
       moduleId: result.moduleId,
       packageTitle: result.packageTitle,
       notification: result.notification,
+      launchedWorld: launchResult?.matchedWorldId || "",
+      launchNotification: launchResult?.notification || "",
+      requestedWorld: requestedWorld || "",
     }, null, 2));
   } finally {
     await browser.close();
