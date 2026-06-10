@@ -4,7 +4,11 @@ Scripts, compendiums, modules, and utilities for Darkfinder and its subsystems.
 
 ## Foundry module scaffold
 
-This repo now includes a Foundry VTT module manifest at [module.json](/c:/Users/csnyd/OneDrive/Desktop/Pathfinder/Darkfinder/module.json) and a small runtime API under [scripts/module.js](/c:/Users/csnyd/OneDrive/Desktop/Pathfinder/Darkfinder/scripts/module.js).
+This repo now includes a Foundry VTT module manifest at:
+
+`https://raw.githubusercontent.com/ChrisMichaelSnyder/darkfinder/main/module.json`
+
+It also includes a small runtime API under [scripts/module.js](/abs/path/c:/Users/csnyd/OneDrive/Desktop/Pathfinder/Darkfinder/scripts/module.js).
 
 Current module launchers:
 
