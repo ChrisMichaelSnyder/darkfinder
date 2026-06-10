@@ -35,5 +35,18 @@ npm run update:foundry-module -- --module darkfinder
 
 The updater logs into the Foundry setup page, opens the Add-on Modules tab, and clicks the update control for the selected module.
 
+To update all three hosted servers in one pass:
+
+```powershell
+$env:FOUNDRY_ADMIN_PASSWORD='your-admin-password'
+npm run update:foundry-modules -- --module darkfinder
+```
+
+The multi-server wrapper targets these setup URLs by default:
+
+- `https://carrion.davidleepatrick.com/setup`
+- `https://nightfall.davidleepatrick.com/setup`
+- `https://whatif.davidleepatrick.com/setup`
+
 Setup notes are in [docs/module-setup.md](/c:/Users/csnyd/OneDrive/Desktop/Pathfinder/Darkfinder/docs/module-setup.md).
 Release prep notes for manifest-URL installation are in [docs/release-checklist.md](/c:/Users/csnyd/OneDrive/Desktop/Pathfinder/Darkfinder/docs/release-checklist.md).

@@ -128,7 +128,11 @@ async function dismissTourOverlay(page) {
   const closeSelectors = [
     'button[aria-label="Close Tour"]',
     'button[data-action="close"]',
+    '[data-action="exitTour"]',
+    '[data-action="dismissTour"]',
     ".tour button",
+    ".tour .step-button",
+    ".tour .close",
     ".introjs-skipbutton",
     ".shepherd-cancel-icon",
     ".shepherd-button",
@@ -142,7 +146,14 @@ async function dismissTourOverlay(page) {
   }
 
   await page.evaluate(() => {
-    for (const selector of [".tour-overlay", ".introjs-overlay", ".shepherd-modal-overlay-container"]) {
+    for (const selector of [
+      ".tour-overlay",
+      ".tour",
+      ".introjs-overlay",
+      ".introjs-tooltipReferenceLayer",
+      ".shepherd-modal-overlay-container",
+      ".shepherd-element",
+    ]) {
       document.querySelectorAll(selector).forEach((element) => element.remove());
     }
   }).catch(() => false);
@@ -239,6 +250,7 @@ async function detectCurrentWorldName(page, url, timeoutMs) {
 
 async function launchWorld(page, worldSearch, timeoutMs) {
   await openWorldsTab(page);
+  await dismissTourOverlay(page);
 
   const worldRows = page.locator("#worlds-list .package.world");
   const rowCount = await worldRows.count();
@@ -250,11 +262,26 @@ async function launchWorld(page, worldSearch, timeoutMs) {
     const rowText = normalizeText(await row.innerText().catch(() => ""));
     if (!normalizedSearch || (!packageId.includes(normalizedSearch) && !rowText.includes(normalizedSearch))) continue;
 
+    await dismissTourOverlay(page);
     const beforeTexts = await collectNotificationTexts(page);
-    const launchControl = row.locator('[data-action="worldLaunch"]').first();
-    await launchControl.click({ force: true }).catch(async () => {
-      await launchControl.evaluate((node) => node.click());
+    const launchResult = await row.evaluate(async (node) => {
+      const button = node.querySelector('[data-action="worldLaunch"]');
+      const app = globalThis.foundry?.applications?.instances?.get("setup-packages");
+      if (!button || !app?._onClickAction) return { ok: false };
+      const event = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+      await app._onClickAction(event, button);
+      return { ok: true };
     });
+    if (!launchResult?.ok) {
+      throw new Error(`Foundry could not invoke the launch action for world "${worldSearch}".`);
+    }
+
+    await page.waitForFunction(
+      () => location.pathname === "/join" || document.body.innerText.includes("Join Game Session"),
+      undefined,
+      { timeout: timeoutMs },
+    ).catch(() => null);
+
     const notification = await waitForNewNotification(page, beforeTexts, timeoutMs).catch(() => "");
     return {
       worldSearch,
