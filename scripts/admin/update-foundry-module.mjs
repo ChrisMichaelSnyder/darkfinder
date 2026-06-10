@@ -120,9 +120,36 @@ async function waitForSetupMenu(page, timeoutMs) {
   await page.locator("#setup-menu").waitFor({ state: "visible", timeout: timeoutMs });
 }
 
+async function dismissTourOverlay(page) {
+  const closeSelectors = [
+    'button[aria-label="Close Tour"]',
+    'button[data-action="close"]',
+    ".tour button",
+    ".introjs-skipbutton",
+    ".shepherd-cancel-icon",
+    ".shepherd-button",
+  ];
+
+  for (const selector of closeSelectors) {
+    const button = page.locator(selector).first();
+    if (await button.isVisible().catch(() => false)) {
+      await button.click({ force: true }).catch(() => false);
+    }
+  }
+
+  await page.evaluate(() => {
+    for (const selector of [".tour-overlay", ".introjs-overlay", ".shepherd-modal-overlay-container"]) {
+      document.querySelectorAll(selector).forEach((element) => element.remove());
+    }
+  }).catch(() => false);
+}
+
 async function openModulesTab(page) {
+  await dismissTourOverlay(page);
   const tab = page.locator('#setup-packages-header [data-group="primary"][data-tab="modules"]');
-  await tab.click();
+  await tab.click({ force: true }).catch(async () => {
+    await tab.evaluate((node) => node.click());
+  });
   await page.locator('#setup-packages section[data-group="primary"][data-tab="modules"].active').waitFor({ state: "visible" });
 }
 
