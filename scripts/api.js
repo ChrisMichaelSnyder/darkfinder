@@ -27,11 +27,11 @@ async function loadMacroSource(relativePath) {
   return source;
 }
 
-async function executeMacroFile(relativePath, thisArg = null) {
+async function executeMacroFile(relativePath, thisArg = null, scopeData = {}) {
   const source = await loadMacroSource(relativePath);
   const AsyncFunction = async function () {}.constructor;
-  const runner = new AsyncFunction(source);
-  return runner.call(thisArg);
+  const runner = new AsyncFunction("scope", source);
+  return runner.call(thisArg, scopeData || {});
 }
 
 function getPack(packName) {
