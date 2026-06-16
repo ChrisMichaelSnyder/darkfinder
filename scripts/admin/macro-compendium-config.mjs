@@ -84,6 +84,13 @@ const gmMacros = [
     img: "icons/svg/d20-highlight.svg",
     ownershipDefault: 0,
   }),
+  createEntry({
+    id: "dfSpellAtkGM1",
+    name: "Repair Spell Attack Buttons (World)",
+    relativePath: "macros/gm-macros/repair-spell-attack-buttons-world/repair-spell-attack-buttons-world.js",
+    img: "icons/tools/hand/hammer-and-nail-brown.webp",
+    ownershipDefault: 0,
+  }),
 ];
 
 const macroPackConfig = [
