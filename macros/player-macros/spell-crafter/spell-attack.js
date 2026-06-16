@@ -26,8 +26,10 @@
     || spellbooks[0]?.id
     || "";
   const defaultSchool = String(invocationDefaults.school || lastSettings.school || "").trim();
-  const defaultSavingThrow = String(invocationDefaults.savingThrow || lastSettings.savingThrow || "").trim();
+  const defaultSavingThrowLabel = String(invocationDefaults.savingThrow || lastSettings.savingThrow || "").trim();
+  const defaultSavingThrow = normalizeSavingThrowOption(defaultSavingThrowLabel);
   const spellLabel = String(invocationDefaults.spellName || "").trim();
+  const shouldAutoRoll = shouldSkipDialog(invocationScope, linkDataset) && !!defaultSpellbookId;
 
   const schoolOptions = [
     { value: "", label: "None / Unspecified" },
@@ -90,30 +92,38 @@
     </div>
   `;
 
-  const submitted = await new Promise((resolve) => {
-    new Dialog({
-      title: spellLabel ? `Spell Attack: ${spellLabel}` : "Spell Attack",
-      content,
-      buttons: {
-        roll: {
-          label: "Roll",
-          callback: (html) => {
-            resolve({
-              spellbookId: String(html.find("#darkfinder-spellbook").val() || ""),
-              school: String(html.find("#darkfinder-school").val() || "").trim(),
-              savingThrow: String(html.find("#darkfinder-save").val() || "").trim(),
-            });
+  const submitted = shouldAutoRoll
+    ? {
+        spellbookId: String(defaultSpellbookId || ""),
+        school: defaultSchool,
+        savingThrow: defaultSavingThrow,
+        savingThrowLabel: defaultSavingThrowLabel || defaultSavingThrow,
+      }
+    : await new Promise((resolve) => {
+      new Dialog({
+        title: spellLabel ? `Spell Attack: ${spellLabel}` : "Spell Attack",
+        content,
+        buttons: {
+          roll: {
+            label: "Roll",
+            callback: (html) => {
+              resolve({
+                spellbookId: String(html.find("#darkfinder-spellbook").val() || ""),
+                school: String(html.find("#darkfinder-school").val() || "").trim(),
+                savingThrow: String(html.find("#darkfinder-save").val() || "").trim(),
+                savingThrowLabel: String(html.find("#darkfinder-save").val() || "").trim(),
+              });
+            },
+          },
+          cancel: {
+            label: "Cancel",
+            callback: () => resolve(null),
           },
         },
-        cancel: {
-          label: "Cancel",
-          callback: () => resolve(null),
-        },
-      },
-      default: "roll",
-      close: () => resolve(null),
-    }).render(true);
-  });
+        default: "roll",
+        close: () => resolve(null),
+      }).render(true);
+    });
 
   if (!submitted?.spellbookId) return;
   saveLastSettings({
@@ -127,8 +137,9 @@
   const d20Result = Number(roll.dice?.[0]?.total ?? roll.terms?.find?.((term) => term?.faces === 20)?.total ?? 0);
   const dcBonusTooltip = attackData.dcBonusTotal ? ` + ${attackData.dcBonusTotal} [Spell DC Bonuses]` : "";
   const tooltipText = `${d20Result} [1d20] + ${attackData.casterLevelHalf} [CL/2] + ${attackData.abilityMod} [${attackData.abilityLabel}]${dcBonusTooltip}`;
-  const saveHtml = submitted.savingThrow
-    ? `<span style="margin-top:0.18rem;font-size:0.98rem;font-weight:700;line-height:1.08;color:#3e3424;">${escapeHtml(submitted.savingThrow)}</span>`
+  const saveText = String(submitted.savingThrowLabel || submitted.savingThrow || "").trim();
+  const saveHtml = saveText
+    ? `<span style="margin-top:0.18rem;font-size:0.98rem;font-weight:700;line-height:1.08;color:#3e3424;">${escapeHtml(saveText)}</span>`
     : "";
 
   const resultContent = `
@@ -196,6 +207,20 @@
       savingThrow: String(invocationScope.savingThrow || linkDataset.savingThrow || "").trim(),
       spellName: String(invocationScope.spellName || linkDataset.spellName || "").trim(),
     };
+  }
+
+  function shouldSkipDialog(invocationScope, linkDataset) {
+    if (invocationScope?.skipDialog === true) return true;
+    return String(linkDataset.spellcraftingSpellAttack || "").trim().toLowerCase() === "true";
+  }
+
+  function normalizeSavingThrowOption(value) {
+    const normalized = String(value || "").trim();
+    if (!normalized) return "";
+    if (/fortitude/i.test(normalized)) return "Fortitude";
+    if (/reflex/i.test(normalized)) return "Reflex";
+    if (/will/i.test(normalized)) return "Will";
+    return normalized;
   }
 
   async function resolveInvocationActor(invocationScope, linkDataset) {
