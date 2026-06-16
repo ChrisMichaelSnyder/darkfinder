@@ -1,5 +1,14 @@
 (async () => {
-  const actor = canvas.tokens.controlled[0]?.actor || game.user.character;
+  const invocationScope = typeof scope !== "undefined" && scope ? scope : {};
+  const clickEvent = typeof event !== "undefined" ? event : globalThis.event;
+  const clickedLink = clickEvent?.currentTarget instanceof HTMLElement
+    ? clickEvent.currentTarget
+    : clickEvent?.target?.closest?.("[data-spellcrafting-spell-attack='true']");
+  const linkDataset = clickedLink?.dataset || {};
+
+  const actor = await resolveInvocationActor(invocationScope, linkDataset)
+    || canvas.tokens.controlled[0]?.actor
+    || game.user.character;
   if (!actor) {
     return ui.notifications.warn("Please select a token or set an active character before using Spell Attack.");
   }
@@ -11,7 +20,14 @@
   }
 
   const lastSettings = loadLastSettings();
-  const defaultSpellbookId = getPrimarySpellbookId(actor, spellbooks) || spellbooks[0]?.id || "";
+  const invocationDefaults = getInvocationDefaults(invocationScope, linkDataset);
+  const defaultSpellbookId = getCanonicalSpellbookKey(actor, invocationDefaults.spellbookId, spellbooks)
+    || getPrimarySpellbookId(actor, spellbooks)
+    || spellbooks[0]?.id
+    || "";
+  const defaultSchool = String(invocationDefaults.school || lastSettings.school || "").trim();
+  const defaultSavingThrow = String(invocationDefaults.savingThrow || lastSettings.savingThrow || "").trim();
+  const spellLabel = String(invocationDefaults.spellName || "").trim();
 
   const schoolOptions = [
     { value: "", label: "None / Unspecified" },
@@ -59,13 +75,13 @@
       <div class="darkfinder-spell-attack-field">
         <label for="darkfinder-school">School</label>
         <select id="darkfinder-school">
-          ${schoolOptions.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === String(lastSettings.school || "") ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+          ${schoolOptions.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === defaultSchool ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
         </select>
       </div>
       <div class="darkfinder-spell-attack-field">
         <label for="darkfinder-save">Saving Throw</label>
         <select id="darkfinder-save">
-          ${saveOptions.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === String(lastSettings.savingThrow || "") ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+          ${saveOptions.map((option) => `<option value="${escapeHtml(option.value)}" ${option.value === defaultSavingThrow ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
         </select>
       </div>
       <div class="darkfinder-spell-attack-help">
@@ -76,7 +92,7 @@
 
   const submitted = await new Promise((resolve) => {
     new Dialog({
-      title: "Spell Attack",
+      title: spellLabel ? `Spell Attack: ${spellLabel}` : "Spell Attack",
       content,
       buttons: {
         roll: {
@@ -171,6 +187,26 @@
 
   function getObjectPath(object, path) {
     return path.reduce((acc, key) => (acc && acc[key] !== undefined ? acc[key] : null), object);
+  }
+
+  function getInvocationDefaults(invocationScope, linkDataset) {
+    return {
+      spellbookId: String(invocationScope.spellbookId || linkDataset.spellbookId || "").trim(),
+      school: String(invocationScope.school || linkDataset.spellSchool || "").trim(),
+      savingThrow: String(invocationScope.savingThrow || linkDataset.savingThrow || "").trim(),
+      spellName: String(invocationScope.spellName || linkDataset.spellName || "").trim(),
+    };
+  }
+
+  async function resolveInvocationActor(invocationScope, linkDataset) {
+    const actorUuid = String(invocationScope.actorUuid || linkDataset.actorUuid || "").trim();
+    if (!actorUuid) return null;
+    try {
+      return await fromUuid(actorUuid);
+    } catch (err) {
+      console.warn("Spell Attack macro could not resolve actor from UUID.", err);
+      return null;
+    }
   }
 
   function escapeHtml(value) {

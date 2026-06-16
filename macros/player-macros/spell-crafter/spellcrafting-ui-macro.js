@@ -39,8 +39,6 @@
   let preparedSpellDataCache = null;
   let legacyPreparedCoreDataCache = null;
 
-  registerSpellAttackChatCardHook();
-
   const dialog = new Dialog({
     title: "Spellcrafting Spell Builder",
     content: buildDialogContent(spellbooks, state, actor),
@@ -2203,21 +2201,42 @@
   function buildSpellAttackButtonHtml(actor, spellbookId, core, spellName, savingThrowOverride = "") {
     const savingThrow = getDescriptionSavingThrowValue(core, savingThrowOverride);
     if (!shouldShowSpellAttackButton(core, savingThrow)) return "";
+    const macro = getSpellAttackMacro();
+    if (!macro?.uuid) {
+      return `
+        <div class="spellcrafting-spell-attack-row" style="margin:0.05rem 0 0.95rem;">
+          <span
+            class="spellcrafting-spell-attack-button"
+            title="The Spell Attack macro could not be found."
+            aria-disabled="true"
+            style="display:inline-flex;align-items:center;justify-content:center;padding:0.56rem 1rem;border:1px solid #8f8674;border-radius:5px;background:linear-gradient(to bottom, #cfc5ac, #b4aa90);color:#574d3c;font-weight:700;font-size:1.15rem;line-height:1;cursor:not-allowed;text-decoration:none;opacity:0.8;"
+          >Spell Attack</span>
+        </div>
+      `;
+    }
     return `
       <div class="spellcrafting-spell-attack-row" style="margin:0.05rem 0 0.95rem;">
-        <span
-          class="spellcrafting-spell-attack-button"
+        <a
+          class="content-link spellcrafting-spell-attack-button"
+          draggable="true"
+          data-link
+          data-type="Macro"
+          data-uuid="${escapeHtml(macro.uuid)}"
+          data-id="${escapeHtml(String(macro.id || ""))}"
+          data-spellcrafting-spell-attack="true"
           data-actor-uuid="${escapeHtml(actor.uuid || "")}"
           data-spellbook-id="${escapeHtml(String(spellbookId || ""))}"
           data-spell-school="${escapeHtml(getSpellSchool(core) || "")}"
           data-saving-throw="${escapeHtml(savingThrow)}"
           data-spell-name="${escapeHtml(spellName || getDisplaySpellName(core?.name || ""))}"
-          role="button"
-          tabindex="0"
           style="display:inline-flex;align-items:center;justify-content:center;padding:0.56rem 1rem;border:1px solid #8f8674;border-radius:5px;background:linear-gradient(to bottom, #ddd4b8, #c9bea0);color:#1c1914;font-weight:700;font-size:1.15rem;line-height:1;cursor:pointer;text-decoration:none;"
-        >Spell Attack</span>
+        ><i class="fas fa-bolt" style="margin-right:0.45rem;"></i>Spell Attack</a>
       </div>
     `;
+  }
+
+  function getSpellAttackMacro() {
+    return game.macros?.find((macro) => String(macro?.name || "").trim().toLowerCase() === "spell attack") || null;
   }
 
   function getSelectedCoreBaseSP(actor, state) {
@@ -3365,97 +3384,6 @@
     });
   
     return createSpellChatFromTemporaryItem(actor, itemData);
-  }
-
-  function registerSpellAttackChatCardHook() {
-    globalThis.pf1SpellcraftingHandleAttackButton = async function(buttonElement) {
-      const button = buttonElement instanceof HTMLElement ? buttonElement : buttonElement?.currentTarget;
-      if (!button || button.disabled) return;
-
-      const actorUuid = button.dataset.actorUuid || "";
-      const spellbookId = button.dataset.spellbookId || "";
-      const spellSchool = button.dataset.spellSchool || "";
-      const savingThrow = button.dataset.savingThrow || "None";
-      const spellName = button.dataset.spellName || "Spell";
-
-      const actor = actorUuid ? await fromUuid(actorUuid) : null;
-      if (!actor) {
-        ui.notifications.warn("The actor for this Spell Attack could not be found.");
-        return;
-      }
-
-      const attackData = getSpellAttackData(actor, spellbookId, spellSchool);
-      const roll = new Roll(attackData.formulaText);
-      await roll.evaluate();
-      const d20Result = Number(roll.dice?.[0]?.total ?? roll.terms?.find?.((term) => term?.faces === 20)?.total ?? 0);
-      const dcBonusTooltip = attackData.dcBonusTotal ? ` + ${attackData.dcBonusTotal} [Spell DC Bonuses]` : "";
-      const tooltipText = `${d20Result} [1d20] + ${attackData.casterLevelHalf} [CL/2] + ${attackData.abilityMod} [${attackData.abilityLabel}]${dcBonusTooltip}`;
-
-      const resultContent = `
-        <div class="spellcrafting-spell-attack-result" style="display:flex;justify-content:center;padding:0.15rem 0;">
-          <div title="${escapeHtml(tooltipText)}" style="min-width:208px;max-width:100%;padding:0.75rem 0.85rem;border:1px solid #b6a16e;border-radius:8px;background:linear-gradient(180deg, #f6f1e5 0%, #e8dfcf 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.55), 0 2px 5px rgba(0,0,0,0.08);text-align:center;cursor:help;">
-            <div style="font-size:0.7rem;font-weight:800;letter-spacing:0.07em;text-transform:uppercase;color:#6b5c3d;">Spell Attack</div>
-            <div style="margin-top:0.22rem;display:flex;flex-direction:column;align-items:center;justify-content:center;">
-              <span class="spellcrafting-spell-attack-total" style="font-weight:900;font-size:2rem;line-height:1;color:#1f1a12;">${escapeHtml(String(roll.total))}</span>
-              <span style="margin-top:0.18rem;font-size:0.98rem;font-weight:700;line-height:1.08;color:#3e3424;">${escapeHtml(savingThrow)}</span>
-            </div>
-          </div>
-        </div>
-      `;
-      const chatData = {
-        user: game.user.id,
-        speaker: ChatMessage.getSpeaker({ actor }),
-        content: resultContent,
-      };
-      applyChatRollMode(chatData);
-      await ChatMessage.create(chatData);
-    };
-
-    if (globalThis.pf1SpellcraftingAttackHookId != null) {
-      Hooks.off("renderChatMessage", globalThis.pf1SpellcraftingAttackHookId);
-      Hooks.off("renderChatMessageHTML", globalThis.pf1SpellcraftingAttackHookId);
-      globalThis.pf1SpellcraftingAttackHookId = null;
-    }
-
-    globalThis.pf1SpellcraftingAttackHookId = Hooks.on("renderChatMessageHTML", (message, element) => {
-      const root = element instanceof HTMLElement ? element : null;
-      if (!root) return;
-
-      const buttons = root.querySelectorAll(".spellcrafting-spell-attack-button");
-      if (!buttons.length) return;
-
-      const messageAuthorId = String(message.author?.id || "");
-      const isCreator = messageAuthorId === String(game.user.id);
-
-      for (const button of buttons) {
-        button.setAttribute("aria-disabled", isCreator ? "false" : "true");
-        button.setAttribute("data-disabled", isCreator ? "false" : "true");
-        button.style.opacity = isCreator ? "1" : "0.6";
-        button.style.cursor = isCreator ? "pointer" : "not-allowed";
-
-        if (!isCreator) {
-          button.setAttribute("title", "Only the player who created this chat card can use Spell Attack.");
-        } else {
-          button.removeAttribute("title");
-        }
-
-        button.onclick = async (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          if (button.dataset.disabled === "true") return;
-          await globalThis.pf1SpellcraftingHandleAttackButton(button);
-        };
-
-        button.onkeydown = async (event) => {
-          if (event.key !== "Enter" && event.key !== " ") return;
-          event.preventDefault();
-          event.stopPropagation();
-          if (button.dataset.disabled === "true") return;
-          await globalThis.pf1SpellcraftingHandleAttackButton(button);
-        };
-      }
-    });
-    globalThis.pf1SpellcraftingAttackHookRegistered = true;
   }
 
   function buildDialogContent(spellbooks, state, actor) {
