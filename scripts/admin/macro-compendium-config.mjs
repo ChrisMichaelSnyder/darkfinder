@@ -17,6 +17,9 @@ function createEntry({ id, name, relativePath, img, ownershipDefault }) {
   };
 }
 
+// Default macro icon convention:
+// use icons/svg/dice-target.svg for new macros unless a task explicitly picks another icon.
+
 const playerMacros = [
   createEntry({
     id: "dfCarried001",
@@ -88,7 +91,14 @@ const gmMacros = [
     id: "dfSpellAtkGM1",
     name: "Repair Spell Attack Buttons (World)",
     relativePath: "macros/gm-macros/repair-spell-attack-buttons-world/repair-spell-attack-buttons-world.js",
-    img: "icons/tools/hand/hammer-and-nail-brown.webp",
+    img: "icons/svg/dice-target.svg",
+    ownershipDefault: 0,
+  }),
+  createEntry({
+    id: "dfTimeSwap01",
+    name: "Switch Representative Characters",
+    relativePath: "macros/gm-macros/switch-time-period/switch-time-period.js",
+    img: "icons/svg/clockwork.svg",
     ownershipDefault: 0,
   }),
 ];
