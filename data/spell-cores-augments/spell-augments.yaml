@@ -1,0 +1,110 @@
+entries:
+  - icon: "icons/svg/daze.svg"
+    text: |
+      Area
+      Type: Augment
+      Limitation: A spell core whose range is greater than Personal
+      Description:
+      The spell changes to an area, either a Cone, Line, Burst, or Emanation.
+      (+2 ): Change spell's Target to "10ft Burst"
+      (+2 ): Change spell's Target to "20ft Cone"
+      (+2 ): Change spell's Target to "60ft Line"
+      (+2 ): Change spell's Target to "10ft Emanation". Creatures are only under the effects of the spell while they remain within the emanation.
+      (+1*): Add +5 ft to the area of a spell with a target of "emanation"
+      (+1*): Add +10 ft to the area of a spell with a target of "burst"
+      (+1*): Add +20 ft to the area of a spell with a target of "cone"
+      (+1*): Add +60 ft to the area of a spell with a target of "line"
+      (+1*): Divide the area of a spell by 2, but increase the number of areas created by the spell by 1. A creature whose space is within more than one overlapping area is treated as only being in one area.
+ 
+  - icon: "icons/svg/daze.svg"
+    text: |
+      Targets
+      Type: Augment
+      Limitation: A spell core that affects at least 1 target and does not affect an area.
+      Description:
+      (+1*): Add 1 to the number of targets the spell can affect, but all targets must be within 30 feet of each other.
+      (+1*): Add 3 to the number of targets the spell can affect, but targets make their saves one at a time and if one succeeds, then the spell does not affect any subsequent targets. Subsequent targets must have a clear line that can be drawn with no obstacles or creatures between them, and the total distance between them and you cannot exceed the spells' range. All targets must be within 30 feet of each other.
+      (+2 ): Targets do not need to be within 30 feet of each other.
+ 
+  - icon: "icons/svg/daze.svg"
+    text: |
+      Contingent
+      Type: Augment
+      Description:
+      Complete the spell when a specified trigger occurs.
+      (+6 ): When you cast a spell with this augment, define a clear and specific trigger of your choice, and if the spell has a target you also must define who is being targeted, such as "when an enemy attacks me, cast this spell on myself". When that trigger occurs, the spell immediately completes itself without you needing to spend an action or even be conscious, but you also don't get to choose whether or not the spell completes. An untriggered contingent spell is removed after completing a Long Rest.
+      (+1*): You can decide not to have the spell complete when the triggering event occurs up to +1 times.
+      (+1*): You can define an additional trigger for the spell.
+ 
+  - icon: "icons/svg/daze.svg"
+    text: |
+      Duration
+      Type: Augment
+      Limitation: Any spell core with a non-instantaneous duration measured in a finite number.
+      Description:
+      Increase the duration of a spell effect.
+      (+1*): Increase the spell's duration by 1 Round.
+      (+4 ): Change the spell's duration to "Concentration"
+      (+6 ): Change the spell's duration from "Concentration" to "24 hours"
+ 
+  - icon: "icons/svg/daze.svg"
+    text: |
+      Effort
+      Type: Augment
+      Limitation: The resulting spell effect takes an additional move action to cast and cannot last longer than 5 minutes no matter its listed duration.
+      Description:
+      Make the spell cheaper to cast by making it more physically demanding to cast.
+      (-1 ): You must succeed a DC 20 skill check in a thematically relevant skill check when completing this spell, or the spell fails. A Natural 1 is an automatic failure and a Natural 20 is not an automatic success. The GM must approve your skill choice to be sure it is the most relevant to the spells' thematics, and it should generally be a physical skill or at least a skill that might use actual effort (like a Heal or Perform check).
+      (-1*): Increase the DC of the chosen skill check by +10.
+      (-1* ): When completing this spell you must make an Endurance check or gain 1 point of Fatigue and you cannot complete the spell this turn.
+ 
+  - icon: "icons/svg/daze.svg"
+    text: |
+      Glyph
+      Type: Augment
+      Limitation: The Glyph must be inscribed onto an immobile surface, such as a floor or wall. It is visible, but may be cleverly hidden.
+      Description:
+      (+2 ): When a creature comes within 5 feet of the Glyph, it triggers the spell as if it were cast at that moment from the same square the glyph is in, and you immediately become aware that it has been triggered regardless of how far away it is. The Glyph lasts 24 hours, and you may renew the duration of an untriggered Glyph by casting the spell again the next day without needing to have line of sight or effect to it. A Glyph spell has its Target changed to "30 ft burst".
+      (+1 ): The Glyph can be manually triggered remotely.
+      (+1 ): The Glyph is invisible, requiring a Perception check equal to 10+(2x the total SP of this spell) to spot.
+ 
+  - icon: "icons/svg/daze.svg"
+    text: |
+      Graceful
+      Type: Augment
+      Description:
+      The spell is easier to cast and is resistant to disruption.
+      (+1 ): The spell does not provoke attacks of opportunity
+      (+1 ): While casting this spell, its SP cost is not counted toward the total SP cost of spells you are concentrating on.
+ 
+  - icon: "icons/svg/daze.svg"
+    text: |
+      Range
+      Type: Augment
+      Description:
+      Increase the range of the spell. Apply this mod incrementally as many times as needed to achieve the desired range.
+      (-1 ): Change range to Personal.
+      (+2 ): Change range of Personal to range of Touch.
+      (+1 ): Change range of Touch to range of Close.
+      (+1 ): Change range of Close to range of Medium
+      (+1 ): Change range of Medium to range of Long
+ 
+  - icon: "icons/svg/daze.svg"
+    text: |
+      Rapid
+      Type: Augment
+      Description:
+      Speed up the casting time of the spell core.
+      (+2 ): Change a Round casting time to a Standard action
+      (+6 ): Change a Standard action casting time to a Swift action
+ 
+  - icon: "icons/svg/daze.svg"
+    text: |
+      Siphon
+      Type: Augment
+      Limitation: Any spell core that deals hit point damage.
+      Description:
+      You create a conduit between the target(s) of your spell and you, causing some of the damage dealt by the spell to be transferred to you as temporary hit points which last until your next short or long rest. A target cannot have more hit points siphoned from it than its remaining hit points. Temporary hit points gained from spells with this Augment do not stack.
+      (+1*): When the spell successfully deals damage to a creature you gain up to 2d6 temporary hit points. You cannot gain more temporary hit points in this way than the total sum of damage the spell dealt to all targets. Each SP spent on this increases the maximum amount of temp hp siphoned by +2d6.
+      (+1): You may choose another target within the spell's range to receive the temporary hit points instead of you.
+      

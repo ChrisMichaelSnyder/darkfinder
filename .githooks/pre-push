@@ -2,10 +2,19 @@
 set -eu
 
 echo "Validating macro layout..."
+echo "Synchronizing spell compendium..."
+node scripts/admin/sync-spell-cores-augments.mjs
+echo "Validating spell compendium..."
+node scripts/admin/check-spell-cores-augments.mjs
+echo "Validating macro layout..."
 node scripts/admin/check-macro-layout.mjs
 
 if ! git diff --quiet -- \
+  data/spell-cores-augments \
+  packs/spell-cores-augments \
   scripts/admin/macro-compendium-config.mjs \
+  scripts/admin/sync-spell-cores-augments.mjs \
+  scripts/admin/check-spell-cores-augments.mjs \
   macros/player-macros \
   macros/gm-macros \
   macros/non-module \
@@ -14,8 +23,8 @@ if ! git diff --quiet -- \
   docs/module-setup.md \
   docs/release-checklist.md
 then
-  echo "Pre-push check stopped the push because macro layout or pack configuration changes are still unstaged or uncommitted."
-  echo "Run npm run sync:macro-compendiums, review the pack updates, and commit them before pushing."
+  echo "Pre-push check stopped the push because compendium or macro pack changes are still unstaged or uncommitted."
+  echo "Run npm run prepare:macro-packs, review the generated updates, and commit them before pushing."
   exit 1
 fi
 
