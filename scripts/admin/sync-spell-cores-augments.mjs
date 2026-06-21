@@ -8,6 +8,7 @@ const PACK_PATH = path.resolve(ROOT, "packs/spell-cores-augments");
 const CORE_SOURCE_PATH = path.resolve(ROOT, "data/spell-cores-augments/spell-cores.yaml");
 const AUGMENT_SOURCE_PATH = path.resolve(ROOT, "data/spell-cores-augments/spell-augments.yaml");
 const ITEM_KEY_PREFIX = "!items!";
+const FOLDER_KEY_PREFIX = "!folders!";
 
 const STABLE_DOCUMENT_STATS = {
   coreVersion: "13.346",
@@ -20,6 +21,19 @@ const STABLE_DOCUMENT_STATS = {
   duplicateSource: null,
   exportSource: null,
 };
+
+const COMPENDIUM_FOLDER_DEFINITIONS = [
+  {
+    key: "core",
+    name: "Spell Cores",
+    typeLabel: "Core",
+  },
+  {
+    key: "augment",
+    name: "Spell Augments",
+    typeLabel: "Augment",
+  },
+];
 
 const SCHOOL_MAP = {
   abjuration: "abj",
@@ -181,7 +195,38 @@ function createStableId(entry) {
     .slice(0, 16);
 }
 
-function createDocument(entry, index) {
+function createStableFolderId(folderDefinition) {
+  return crypto
+    .createHash("sha1")
+    .update(`folder::${normalizeCompare(folderDefinition.name)}`)
+    .digest("hex")
+    .slice(0, 16);
+}
+
+function createFolderDocument(folderDefinition, index) {
+  const sort = (index + 1) * 100000;
+  return {
+    _id: createStableFolderId(folderDefinition),
+    name: folderDefinition.name,
+    sorting: "a",
+    sort,
+    folder: null,
+    color: null,
+    description: "",
+    type: "Item",
+    flags: {},
+    _stats: STABLE_DOCUMENT_STATS,
+  };
+}
+
+function getCompendiumFolderKey(entry) {
+  const normalizedType = normalizeCompare(entry.type);
+  if (normalizedType === "core") return "core";
+  if (normalizedType === "augment") return "augment";
+  throw new Error(`Entry "${entry.name}" has unsupported Type "${entry.type}".`);
+}
+
+function createDocument(entry, index, folderId) {
   const sort = (index + 1) * 100000;
   return {
     _id: createStableId(entry),
@@ -250,7 +295,7 @@ function createDocument(entry, index) {
     },
     img: entry.icon || "icons/svg/dice-target.svg",
     effects: [],
-    folder: null,
+    folder: folderId,
     flags: {},
     sort,
     ownership: {
@@ -260,13 +305,16 @@ function createDocument(entry, index) {
   };
 }
 
-async function rebuildPack(folder, documents) {
+async function rebuildPack(folder, folderDocuments, itemDocuments) {
   fs.rmSync(folder, { recursive: true, force: true });
 
   const db = new ClassicLevel(folder, { valueEncoding: "utf8" });
   await db.open();
   try {
-    for (const doc of documents) {
+    for (const folderDoc of folderDocuments) {
+      await db.put(`${FOLDER_KEY_PREFIX}${folderDoc._id}`, JSON.stringify(folderDoc));
+    }
+    for (const doc of itemDocuments) {
       await db.put(`${ITEM_KEY_PREFIX}${doc._id}`, JSON.stringify(doc));
     }
   } finally {
@@ -292,9 +340,18 @@ function buildEntryRecords() {
 
 async function main() {
   const sourceEntries = buildEntryRecords();
+  const folderDocuments = COMPENDIUM_FOLDER_DEFINITIONS.map((folderDefinition, index) =>
+    createFolderDocument(folderDefinition, index)
+  );
+  const folderIdByKey = new Map(folderDocuments.map((folderDoc, index) => [
+    COMPENDIUM_FOLDER_DEFINITIONS[index].key,
+    folderDoc._id,
+  ]));
   const seenIds = new Set();
   const documents = sourceEntries.map((entry, index) => {
-    const doc = createDocument(entry, index);
+    const folderKey = getCompendiumFolderKey(entry);
+    const folderId = folderIdByKey.get(folderKey);
+    const doc = createDocument(entry, index, folderId);
     if (seenIds.has(doc._id)) {
       throw new Error(`Stable ID collision detected for "${entry.name}".`);
     }
@@ -302,10 +359,11 @@ async function main() {
     return doc;
   });
 
-  await rebuildPack(PACK_PATH, documents);
+  await rebuildPack(PACK_PATH, folderDocuments, documents);
 
   console.log(JSON.stringify({
     sourceEntries: sourceEntries.length,
+    folders: folderDocuments.length,
     rebuilt: documents.length,
     packPath: path.relative(ROOT, PACK_PATH).replace(/\\/g, "/"),
   }, null, 2));

@@ -8,6 +8,11 @@ const CORE_SOURCE_PATH = path.resolve(ROOT, "data/spell-cores-augments/spell-cor
 const AUGMENT_SOURCE_PATH = path.resolve(ROOT, "data/spell-cores-augments/spell-augments.yaml");
 const PACK_PATH = path.resolve(ROOT, "packs/spell-cores-augments");
 const ITEM_KEY_PREFIX = "!items!";
+const FOLDER_KEY_PREFIX = "!folders!";
+const EXPECTED_FOLDER_NAME_BY_TYPE = {
+  core: "Spell Cores",
+  augment: "Spell Augments",
+};
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -90,11 +95,17 @@ async function readPackDocuments(folder) {
   await db.open();
   try {
     const docs = [];
+    const folders = [];
     for await (const [key, value] of db.iterator()) {
-      if (!String(key).startsWith(ITEM_KEY_PREFIX)) continue;
-      docs.push(JSON.parse(value));
+      if (String(key).startsWith(ITEM_KEY_PREFIX)) {
+        docs.push(JSON.parse(value));
+        continue;
+      }
+      if (String(key).startsWith(FOLDER_KEY_PREFIX)) {
+        folders.push(JSON.parse(value));
+      }
     }
-    return docs;
+    return { docs, folders };
   } finally {
     await db.close();
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -108,12 +119,32 @@ function fail(messages) {
   process.exit(1);
 }
 
+function deriveEntryType(text) {
+  const match = String(text || "").match(/^\s*Type:\s*(.+)$/m);
+  return normalizeCompare(match?.[1] || "");
+}
+
 async function main() {
   const errors = [];
   const sourceEntries = [...parseYamlEntries(CORE_SOURCE_PATH), ...parseYamlEntries(AUGMENT_SOURCE_PATH)]
-    .map((entry) => ({ ...parseSpellText(entry.text), icon: entry.icon, text: entry.text }));
-  const packDocs = await readPackDocuments(PACK_PATH);
+    .map((entry) => ({
+      ...parseSpellText(entry.text),
+      icon: entry.icon,
+      text: entry.text,
+      entryType: deriveEntryType(entry.text),
+    }));
+  const { docs: packDocs, folders: packFolders } = await readPackDocuments(PACK_PATH);
   const packByName = new Map(packDocs.map((doc) => [normalizeEntryName(doc.name || ""), doc]));
+  const folderById = new Map(packFolders.map((folder) => [String(folder._id), folder]));
+
+  for (const expectedFolderName of Object.values(EXPECTED_FOLDER_NAME_BY_TYPE)) {
+    const folderMatches = packFolders.filter((folder) => normalizeCompare(folder.name) === normalizeCompare(expectedFolderName));
+    if (!folderMatches.length) {
+      errors.push(`Compendium folder "${expectedFolderName}" is missing.`);
+    } else if (folderMatches.length > 1) {
+      errors.push(`Compendium folder "${expectedFolderName}" is duplicated.`);
+    }
+  }
 
   for (const entry of sourceEntries) {
     const key = normalizeEntryName(entry.name);
@@ -130,6 +161,16 @@ async function main() {
     const docText = stripHtmlToText(doc.system?.description?.value || "");
     if (normalizeCompare(docText) !== normalizeCompare(entry.text)) {
       errors.push(`Compendium description for "${entry.name}" is out of sync.`);
+    }
+
+    const expectedFolderName = EXPECTED_FOLDER_NAME_BY_TYPE[entry.entryType];
+    const assignedFolder = folderById.get(String(doc.folder || ""));
+    if (!expectedFolderName) {
+      errors.push(`Source spell "${entry.name}" has unsupported Type "${entry.entryType}".`);
+    } else if (!assignedFolder) {
+      errors.push(`Compendium entry "${entry.name}" is not assigned to a folder.`);
+    } else if (normalizeCompare(assignedFolder.name) !== normalizeCompare(expectedFolderName)) {
+      errors.push(`Compendium entry "${entry.name}" is assigned to "${assignedFolder.name}" instead of "${expectedFolderName}".`);
     }
   }
 
