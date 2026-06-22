@@ -124,10 +124,11 @@ entries:
       Duration: Permanent or until Destroyed
       Saving Throw: None
       Description:
-      You construct one or more undead Necrocrafts out of nearby corpses. You must use enough corpses with combined Hit Dice equal to the Hit Dice of the Necrocraft(s) you are constructing. A basic Necrocraft has a maximum of 1 HD and has as many Construction Points as it has Hit Dice. Consult the Animate Dead rules document for how to spend Construction Points.
-      When you cast a spell with this core, you must invest some of your own blood into your creations to give you dominion over them. Each time you cast a spell with this core, you take a -1 penalty to your Constitution that remains for as long as at least one of the Necrocrafts created by an instance of this spell's casting remains animated.
+      You construct one or more undead Necrocraft out of nearby corpses. You must use enough corpses with combined Hit Dice equal to the Hit Dice of the Necrocraft(s) you are constructing. A basic Necrocraft has a maximum of 1 HD and has as many Construction Points as it has Hit Dice. Consult the Animate Dead rules document for how to spend Construction Points.
+      When you cast a spell with this core, you must invest some of your magic into keeping it animated. While a necrograft created by a particular casting of this spell remains animated, your total SP is reduced by the total cost of this spell. When the necrocraft is destroyed, you may regain those invested SP.
       Core Augments:
       (+1*): Add +1 to the maximum Hit Dice of the Necrocraft.
+
   
   - icon: "icons/magic/defensive/shield-barrier-glowing-blue.webp"
     text: |
@@ -502,36 +503,7 @@ entries:
       (+2 ): Change the casting time to Immediate.
       (+1 ): The duration changes to 1 Round.
       (+6 ): The duration changes to Concentration.
- 
-  - icon: "icons/magic/control/encase-creature-spider-hold.webp"
-    text: |
-      Metamorphosis
-      Type: Core
-      SP Cost: 1
-      School: Transmutation
-      Casting Time: Standard
-      Range: Personal
-      Duration: Concentration
-      Saving Throw: Fortitude
-      Description:
-      You transform the target into an Animal of size Small or Medium that does not have a CR greater than the total SP cost of this spell. For each size category the target decreases from their original size they gain +3 Dex and -2 Strength, and for each size category the target Increases from their original size you gain  +2 Strength, +1 Con, +1 Natural AC, and -2 Dex. The targets' creature type does not change, but they are treated as having the creature type of their new form as well as their original creature type. Additionally the target gains all of the attacks, senses, movement speeds, and Extraordinary abilities of their new form. The target cannot cast spells in their new form other than those that require no spell components, unless the new form can speak and has hand-like appendages.
-      The target may get a new save at the end of each of their turns to end the effect early if they do not wish to have it.
-      If the target succeeds their initial save, they are staggered for 1 round.
-      Forms chosen for this spell core must be agreed upon with your GM prior to using them
-      Core Augments:
-      (+0 ): The target does not change into a different creature.
-      (+0 ): Change the creature type to Vermin.
-      (+2 ): Change the creature type to Humanoid.
-      (+2 ): Change the creature type to Aberration.
-      (+2 ): Change the creature type to Fey.
-      (+2 ): Change the creature type to Magical Beast.
-      (+2 ): Change the creature type to Ooze.
-      (+2 ): Change the creature type to Undead.
-      (+2 ): Change the creature type to Plant.
-      (+4 ): Change the creature type to Construct.
-      (+4 ): Change the creature type to Outsider.
-      (+4 ): Change the creature type to Dragon.
-      (+4*): Decrease the minimum size and increase the maximum size you can choose by 1.
+
   
   - icon: "icons/skills/movement/feet-winged-boots-brown.webp"
     text: |
@@ -575,7 +547,7 @@ entries:
  
   - icon: "icons/magic/perception/third-eye-blue-red.webp"
     text: |
-      Perception
+      Awareness
       Type: Core
       SP Cost: 1
       School: Divination
@@ -590,9 +562,11 @@ entries:
       (+1*): Increase the bonus to perception granted by +1.
       (+2 ): The target gains Darkvision 10 ft.
       (+1 ): The target gains Scent 20 ft.
-      (+2 ): The target gains Tremorsense 10 ft.
-      (+4): The target gains Blindsense 10 ft.
+      (+3 ): The target gains Tremorsense 10 ft.
+      (+4 ): The target gains Blindsense 10 ft.
+      (+6 ): The target gains Blindsight 10 ft.
       (+1*): Increase the range of one of your senses by +10ft (even one not granted by this spell core)
+
 
   - icon: "icons/environment/traps/cage-grey-steel.webp"
     text: |
