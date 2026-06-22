@@ -10,6 +10,10 @@ function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function renderWikiInlineMarkup(line) {
+  return String(line || "").replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "[$2 $1]");
+}
+
 export function parseArgs(argv) {
   const options = {};
   for (let index = 0; index < argv.length; index += 1) {
@@ -54,7 +58,7 @@ export function renderSpellEntryToWiki(text) {
       wikiLines.push("");
       continue;
     }
-    wikiLines.push(`<br>${line}`);
+    wikiLines.push(`<br>${renderWikiInlineMarkup(line)}`);
   }
 
   return wikiLines.join("\n").trim();

@@ -10,6 +10,7 @@ import {
   normalizeCompare,
   parseYamlEntries,
   deriveEntryType,
+  stripSpellSourceMarkup,
 } from "./spell-source-utils.mjs";
 
 const PACK_PATH = path.resolve(ROOT, "packs/spell-cores-augments");
@@ -116,7 +117,7 @@ async function main() {
     }
 
     const docText = stripHtmlToText(doc.system?.description?.value || "");
-    if (normalizeCompare(docText) !== normalizeCompare(entry.text)) {
+    if (normalizeCompare(docText) !== normalizeCompare(stripSpellSourceMarkup(entry.text))) {
       errors.push(`Compendium description for "${entry.name}" is out of sync.`);
     }
 

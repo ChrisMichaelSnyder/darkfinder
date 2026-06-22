@@ -17,6 +17,10 @@ export function normalizeCompare(value) {
     .toLowerCase();
 }
 
+export function stripSpellSourceMarkup(value) {
+  return String(value || "").replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "$1");
+}
+
 export function parseYamlEntries(filePath) {
   const source = fs.readFileSync(filePath, "utf8").replace(/\r\n/g, "\n");
   const lines = source.split("\n");

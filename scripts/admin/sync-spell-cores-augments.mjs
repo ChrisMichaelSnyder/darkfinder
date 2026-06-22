@@ -7,6 +7,7 @@ import {
   normalizeText,
   normalizeCompare,
   buildSpellEntryRecords,
+  stripSpellSourceMarkup,
 } from "./spell-source-utils.mjs";
 
 const PACK_PATH = path.resolve(ROOT, "packs/spell-cores-augments");
@@ -59,10 +60,28 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function renderInlineMarkup(line) {
+  const source = String(line || "");
+  const linkPattern = /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g;
+  let cursor = 0;
+  let rendered = "";
+
+  for (const match of source.matchAll(linkPattern)) {
+    const [fullMatch, label, url] = match;
+    const start = match.index ?? 0;
+    rendered += escapeHtml(source.slice(cursor, start));
+    rendered += `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`;
+    cursor = start + fullMatch.length;
+  }
+
+  rendered += escapeHtml(source.slice(cursor));
+  return rendered;
+}
+
 function buildDescriptionHtml(entry) {
   return entry.text
     .split("\n")
-    .map((line) => `<p>${escapeHtml(line || "")}</p>`)
+    .map((line) => `<p>${renderInlineMarkup(line)}</p>`)
     .join("");
 }
 
