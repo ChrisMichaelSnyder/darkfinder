@@ -1,0 +1,258 @@
+entries:
+  # - name: "Example Buff"
+  #   icon: "icons/svg/dice-target.svg"
+  #   description: |
+  #     Example buff description.
+  #   category: "Miscellaneous"
+  #   hideFromToken: false
+  #   limitedUses: "Unlimited"
+  #   maxUsesFormula: ""
+  #   changes:
+  #     - target: "ac"
+  #       formula: "2"
+  #       type: "dodge"
+
+  - name: "Resolve"
+    icon: "systems/pf1/icons/skills/blood_04.jpg"
+    description: |
+      Resolve Check: [[1d20 + @abilities.con.mod]]
+      DC 10
+
+      Fail = Lose 1 Resolve Point
+      Nat 20 = Stabilize
+    category: "Permanent"
+    hideFromToken: true
+    limitedUses: "Per Day"
+    maxUsesFormula: "3+@abilities.con.mod"
+
+
+
+  - name: "Short Rest"
+    icon: "systems/pf1/icons/skills/green_19.jpg"
+    description: |
+      Number of Uses per Day: [[@attributes.hd.total]]
+      Use to regain Hit Points, Spell Points, Sanity or Fatigue
+    category: "Permanent"
+    hideFromToken: true
+    limitedUses: "Per Day"
+    maxUsesFormula: "@attributes.hd.total"
+
+
+
+  - name: "Ability Score Increase by Level"
+    icon: "icons/magic/symbols/star-yellow.webp"
+    description: |
+      +1 to an ability score of your choice at 4th, 8th, 12th, 16th, and 20th level.
+    category: "Permanent"
+    hideFromToken: true
+    limitedUses: "Per Day"
+    maxUsesFormula: "@attributes.hd.total"
+    changes:
+      - target: "Strength"
+        formula: "min(1, floor(@attributes.hd.total / 4))"
+        type: "Untyped"
+      - target: "Strength"
+        formula: "min(1, floor(@attributes.hd.total / 8))"
+        type: "Untyped"
+      - target: "Strength"
+        formula: "min(1, floor(@attributes.hd.total / 12))"
+        type: "Untyped"
+      - target: "Strength"
+        formula: "min(1, floor(@attributes.hd.total / 16))"
+        type: "Untyped"
+      - target: "Strength"
+        formula: "min(1, floor(@attributes.hd.total / 20))"
+        type: "Untyped"
+
+
+
+  - name: "Sanity"
+    icon: "icons/commodities/biological/organ-brain-pink-purple.webp"
+    description: |
+      Since you are mere humans of Earth, trained but still unaccustomed yet to the horrors of the supernatural world, your very sanity is at stake. While your hit points represent your body's ability to withstand physical attacks, your sanity represents your mind’s ability to withstand mental attacks, trauma, and other horrors. To calculate your total sanity, add together your character level, your Intelligence, Wisdom, and Charisma scores (not just the modifiers) and subtract 15 (5 for each mental stat). This is your sanity pool.
+      Whenever you are subject to something traumatic such as someone dying in front of you, walking into a room splattered wall-to-wall with gore, being subject to a non-intimidate fear effect, or even just witnessing the horrific inhuman visage of some supernatural creature, you will be asked to make a sanity check. A sanity check is rolled as 1d20 + Int + Wis + Cha modifiers. If you fail, you typically lose some sanity points as determined by the GM (usually a roll) but you might even acquire Trauma if the experience was traumatic enough (see below). A natural roll of 1 is always a failure.
+      When brought to below half of your total number of sanity points (called your Trauma Threshold) you gain a Trauma. Traumas can be many different things, but usually on the caliber of a Flaw. The GM can either make one up, or roll one at random.
+      When brought to zero sanity you gain a Madness. Madnesses, like Traumas, can be many different things but are always much worse than Traumas and typically completely debilitating, often rendering your character nearly useless or even dangerous to the rest of the party. These are intended to be this bad due to being the sanity point equivalent of being reduced to 0 hit points, or dead, which likewise renders your character completely useless.
+      Healing sanity points is more difficult than healing hit points. Whenever you take a full rest you heal only 1d6 sanity points. If you are in a safe, comforting location, such as a safehouse, or a comfortable room in a town where you don't feel threatened at all, you instead heal 3d6 sanity. Also, when you spend a short rest die, you can choose to recover 1d4 Sanity rather than recover HP or SP. Additionally, whenever you spend a Short Rest, regardless of what you choose to recover, you also have a chance of recovering a 1 sanity as a bonus. The chance to recover bonus sanity is equal to the percentage of sanity you currently have missing, and there is a 10% chance of further increasing this bonus sanity to 2 instead of 1 (or 20% if you are below half your total sanity). Some magics and rituals may be even more effective. 
+      If you have a Trauma and recover enough sanity points to put you at 100% of your maximum sanity, then you may remove that Trauma. If you have a Madness, and recover enough sanity points to put you above your Trauma Threshold, then you may remove that Madness.
+        
+      Trauma Examples
+      Neurosis
+      Memories of your past traumatic experience can be triggered when exposed to further traumatic experiences, exacerbating the situation even more.
+      Whenever you are affected by a fear effect, the fear automatically escalates one step.
+
+      Depression
+      You are always tired and cannot feel joy, or much of anything in fact.
+      You constantly have at least 2 points of Fatigue even after a full rest, and cannot benefit from morale bonuses.
+
+      Hoarding
+      To feel some control of your life, you obsessively hold onto anything and everything no matter how useless.
+      You are treated as carrying 20 additional pounds of random trinkets, baubles, and other things most people would consider junk. In addition, you cannot sell or give away any items on your sheet, even to your allies. 
+
+
+      Melancholia
+      You have a perpetual sadness that prevents you from acting decisively.
+      You are Dazed during your first full round of combat and cannot act in Surprise rounds.
+
+
+      Night Terrors
+      You are constantly plagued by terrifying nightmares that have you waking up screaming, making sleeping difficult for both you and your nearby allies.
+      During every long rest, you have a 50% chance of having a night terror. When you have a night terror, you wake up in the morning with 5 points of Fatigue for the day from lack of sleep. Additionally, any ally sleeping within earshot of you must make a Perception check with a DC of 20. If they succeed, they wake up with 2 points of Fatigue (they cannot willingly fail this check).
+
+
+      Paranoia
+      You are constantly worried that everyone is out to get you, even your allies.
+      You cannot grant or receive flanking bonuses with your allies, and cannot willingly accept harmless spell effects from your allies who must attempt a Spell Attack to target you with such effects. You also automatically fail Sense Motive checks, because you assume everyone is lying to you.
+
+
+      Phobia
+      You are unreasonably terrified of oddly specific things, usually associated with your traumatic experience.
+      When you gain this trauma, the GM picks some general element of the source of your trauma to be your phobia (such as “canine-like creatures” after seeing a werewolf transform). While you have this trauma, you gain the Frightened status when in the presence of your phobia.
+
+      Fugue
+      You are not acting like yourself and have difficulty remembering details about past experiences.
+      You have a -10 penalty to all Int, Wis, and Cha based skill checks.
+
+
+      Hallucinations
+      You see assailants that aren't there, and you waste some of your attacks against these phantom assailants. 
+      All enemies are treated as having 20% concealment against your attacks, or +10% increased miss chance if they already normally have concealment against you. Spell Attacks also gain a 20% failure chance.
+
+
+      Migraines
+      You are plagued by painful headaches, nausea, and light sensitivity. Even just the light of a nearby flashlight is enough to make your head spin.
+      You are sickened for 1 round whenever you come within, or remain within, 20 feet (40 if you have low-light vision) of a light source.
+
+
+
+
+      Madness Examples
+      Amnesia
+      You suffer from catastrophic memory loss, and can barely tell who you are anymore.
+      You cannot use any of your listed class features or feats, unless those features or feats grant a constant bonus and do not require activation. Additionally, you automatically fail all Knowledge checks.
+
+
+      Psychosis
+      You have difficulty discerning the real from the unreal …or friend from foe.
+      While in combat, you are confused.
+
+
+      Masochism
+      You derive pleasure from pain and actively seek your own suffering, often allowing your enemies to hit you on purpose.
+      You are always flatfooted, and take double damage from all sources. In combat, whenever you move, you must end your move closer to the closest enemy.
+
+
+      Psychosomatic Disorder
+      Witnessing ailments is enough for physical effects to manifest in yourself without apparent cause.
+      While witnessing anyone (enemy or ally) with a Foundry-toggleable condition (other than death), you also automatically gain that same condition. You lose the condition as soon as the creature with that condition either loses that condition, or you stop perceiving them.
+
+      Catatonia
+      Your terror is so great that your mind shuts down completely.
+      You are constantly Dazed, and may take only mental actions. You can be moved outside of combat by allies if they lead you along. While in combat, every time you are attacked, there is a 25% chance of you temporarily snapping out of it, in which case you may ignore this madness for the rest of that combat, but slip right back into catatonia immediately after the battle.
+
+
+      Suicidal
+      To you, life is nothing but fear and pain and has come to mean little to you, resulting in you frequently considering ending it all, just to escape.
+      At the end of every session and after every full rest, you must make a DC 5 sanity check. If you fail, your companions find you dead at the beginning of the next session, having ended your own life. Rolling a natural 1 is an automatic fail, and a natural 20 permanently changes this madness to instead have the effects of the Depression trauma (though it is still treated as a madness).
+
+    category: "Temporary"
+    hideFromToken: true
+    limitedUses: "Charges"
+    maxUsesFormula: "@attributes.hd.total + @abilities.int.total + @abilities.wis.total + @abilities.cha.total - 15"
+
+
+
+  - name: "Fatigue"
+    icon: "icons/magic/control/sleep-bubble-purple.webp"
+    description: |
+      For each point of fatigue, the character receives a stacking -1 penalty to Dex and Str. Additionally, for every 2 points of fatigue they also take a -1 penalty to Constitution checks (including Endurance checks), a -1 penalty to Fortitude saves, and a -5 penalty to your base move speed (minimum 5 ft). Furthermore, whenever a character with at least 1 point of fatigue attempts to Run or Charge, they must make an Endurance check or receive an additional point of fatigue. A character whose Dex or Str reaches 0 via fatigue immediately falls unconscious as exhaustion takes them. When using this system, any existing effect which applies the fatigued condition instead applies 2 points of fatigue, and any existing effect that applies the exhausted condition instead applies 6 points of fatigue. 
+
+      Additionally, during a Short Rest in which the player spends at least one Short Rest dice to either regain hp or SP, they additionally may make an Endurance check to remove a point of fatigue. Alternatively, they may simply spend a Short Rest dice to automatically remove a point of fatigue but they do not get to regain hp or spell points if they do this.
+
+      A Long Rest will remove all fatigue points from a character.
+    category: "Temporary"
+    hideFromToken: true
+    limitedUses: "Per Day"
+    maxUsesFormula: "@attributes.hd.total"
+    changes:
+      - target: "Strength"
+        formula: "-@resources.fatigue.value"
+        type: "Untyped"
+      - target: "Dexterity"
+        formula: "-@resources.fatigue.value"
+        type: "Untyped"
+      - target: "Constitution Checks"
+        formula: "-@resources.fatigue.value"
+        type: "Untyped"
+      - target: "Land"
+        formula: "-(floor(@resources.fatigue.value / 2) * 5)"
+        type: "Untyped"
+      - target: "Fortitude"
+        formula: "-(floor(@resources.fatigue.value / 2))"
+        type: "Untyped"
+
+
+
+  - name: "Automatic Bonus Progression"
+    icon: "systems/pf1/icons/feats/silent-spell.jpg"
+    description: |
+      <p>Using this buff:</p>
+      <ol>
+        <li><strong>This buff does not account for weapon/armor/shield enhancement bonus since those are attached to items.</strong> You will still need to track those separately.</li>
+        <li>Set the item level of this buff equal to your character level.</li>
+        <li>Set the first 6 attribute modifications to your stats from most important at the top to least important <strong>alternating between mental and physical stats.</strong></li>
+        <li><a href="https://aonprd.com/Rules.aspx?ID=1950" target="_blank" rel="noopener noreferrer">Automatic Bonus Progression Rules</a></li>
+      </ol>
+      <table>
+        <tbody>
+          <tr><td>1st</td><td>&mdash;</td></tr>
+          <tr><td>2nd</td><td>&mdash;</td></tr>
+          <tr><td>3rd</td><td>Resistance +1</td></tr>
+          <tr><td>4th</td><td>Armor attunement +1, weapon attunement +1</td></tr>
+          <tr><td>5th</td><td>Deflection +1</td></tr>
+          <tr><td>6th</td><td>Mental prowess +2</td></tr>
+          <tr><td>7th</td><td>Physical prowess +2</td></tr>
+          <tr><td>8th</td><td>Armor attunement +1/+1, resistance +2, toughening +1, weapon attunement +1/+1</td></tr>
+          <tr><td>9th</td><td>Armor attunement +2, weapon attunement +2</td></tr>
+          <tr><td>10th</td><td>Deflection +2, resistance +3</td></tr>
+          <tr><td>11th</td><td>Mental prowess +4</td></tr>
+          <tr><td>12th</td><td>Physical prowess +4</td></tr>
+          <tr><td>13th</td><td>Mental prowess +4/+2, physical prowess +4/+2, resistance +4, toughening +2</td></tr>
+          <tr><td>14th</td><td>Armor attunement +2/+2 or +3, resistance +5, weapon attunement +2/+2 or +3</td></tr>
+          <tr><td>15th</td><td>Armor attunement +3/+3 or +4, mental prowess +6/+2 or +4/+4, weapon attunement +3/+3 or +4</td></tr>
+          <tr><td>16th</td><td>Deflection +3, physical prowess +6/+2 or +4/+4, toughening +3</td></tr>
+          <tr><td>17th</td><td>Armor attunement +4/+3 or +5, deflection +4, mental prowess +6/+2/+2 or +4/+4/+2, physical prowess +6/+2/+2 or +4/+4/+2, toughening +4, weapon attunement +4/+3 or +5</td></tr>
+          <tr><td>18th</td><td>Deflection +5, mental prowess +6/+4/+2 or +4/+4/+4, physical prowess +6/+4/+2 or +4/+4/+4, toughening +5</td></tr>
+        </tbody>
+      </table>
+    category: "Permanent"
+    hideFromToken: true
+    limitedUses: "Unlimited"
+    changes:
+      - target: "Intelligence"
+        formula: "2*min(1, floor(@attributes.hd.total/6)) + 2*min(2, floor(@attributes.hd.total/11)) + 2*min(2, floor(@attributes.hd.total/15))"
+        type: "Enhancement"
+      - target: "Dexterity"
+        formula: "2*min(1, floor(@attributes.hd.total/7)) + 2*min(2, floor(@attributes.hd.total/12)) + 2*min(2, floor(@attributes.hd.total/16))"
+        type: "Enhancement"
+      - target: "Wisdom"
+        formula: "2*min(1, floor(@attributes.hd.total/13)) + 2*min(2, floor(@attributes.hd.total/18))"
+        type: "Enhancement"
+      - target: "Constitution"
+        formula: "2*min(1, floor(@attributes.hd.total/13)) + 2*min(2, floor(@attributes.hd.total/18))"
+        type: "Enhancement"
+      - target: "Strength"
+        formula: "2*min(1, floor(@attributes.hd.total/17))"
+        type: "Enhancement"
+      - target: "Charisma"
+        formula: "2*min(1, floor(@attributes.hd.total/17))"
+        type: "Enhancement"
+      - target: "All Saving Throws"
+        formula: "min(1, floor(@attributes.hd.total/3)) + min(1, floor(@attributes.hd.total/8)) + min(1, floor(@attributes.hd.total/10)) + min(1, floor(@attributes.hd.total/13)) + min(1, floor(@attributes.hd.total/14))"
+        type: "Resistance"
+      - target: "Generic AC"
+        formula: "min(1, floor(@attributes.hd.total/5)) + min(1, floor(@attributes.hd.total/10)) + min(1, floor(@attributes.hd.total/16)) + min(1, floor(@attributes.hd.total/17)) + min(1, floor(@attributes.hd.total/18))"
+        type: "Deflection"
+      - target: "Natural Armor AC"
+        formula: "min(1, floor(@attributes.hd.total/8)) + min(1, floor(@attributes.hd.total/13)) + min(1, floor(@attributes.hd.total/16)) + min(1, floor(@attributes.hd.total/17)) + min(1, floor(@attributes.hd.total/18))"
+        type: "Enhancement"

@@ -2,10 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { ClassicLevel } from "classic-level";
+import { resolveBuffTargetKey, resolveChangeTypeKey } from "./common-buff-mappings.mjs";
 
 const ROOT = process.cwd();
-const SOURCE_PATH = path.resolve(ROOT, "data/character-buffs/character-buffs.yaml");
-const PACK_PATH = path.resolve(ROOT, "packs/character-buffs");
+const SOURCE_PATH = path.resolve(ROOT, "data/common-buffs/common-buffs.yaml");
+const PACK_PATH = path.resolve(ROOT, "packs/common-buffs");
 const ITEM_KEY_PREFIX = "!items!";
 
 const STABLE_DOCUMENT_STATS = {
@@ -78,6 +79,10 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function descriptionContainsHtml(description) {
+  return /<[^>]+>/.test(String(description || ""));
 }
 
 function parseCharacterBuffEntries(filePath) {
@@ -191,6 +196,7 @@ function parseCharacterBuffEntries(filePath) {
 function buildDescriptionHtml(description) {
   const trimmed = String(description || "").trim();
   if (!trimmed) return "";
+  if (descriptionContainsHtml(trimmed)) return trimmed;
   return trimmed
     .split("\n")
     .map((line) => `<p>${escapeHtml(line || "")}</p>`)
@@ -211,6 +217,22 @@ function resolveBuffCategory(label) {
   const mapped = BUFF_CATEGORY_MAP[normalized];
   if (!mapped) {
     throw new Error(`Unsupported category value "${label}". Expected Miscellaneous, Permanent, or Temporary.`);
+  }
+  return mapped;
+}
+
+function resolveBuffTarget(label) {
+  const mapped = resolveBuffTargetKey(label);
+  if (!mapped) {
+    throw new Error(`Unsupported buff change target "${label}". Use a known PF1 target label or internal key.`);
+  }
+  return mapped;
+}
+
+function resolveChangeType(label) {
+  const mapped = resolveChangeTypeKey(label);
+  if (!mapped) {
+    throw new Error(`Unsupported buff change type "${label}". Use a known PF1 modifier type such as Enhancement, Deflection, or Resistance.`);
   }
   return mapped;
 }
@@ -237,13 +259,16 @@ function createStableChangeId(entry, index) {
 }
 
 function createChangeData(entry, index) {
+  const resolvedTarget = resolveBuffTarget(entry.target);
+  const resolvedType = resolveChangeType(entry.type);
   return {
     _id: createStableChangeId(entry, index),
     formula: entry.formula,
     operator: "add",
-    target: entry.target,
-    subTarget: entry.target,
-    modifier: entry.type,
+    target: resolvedTarget,
+    subTarget: resolvedTarget,
+    type: resolvedType,
+    modifier: resolvedType,
     priority: 0,
     value: 0,
   };
@@ -327,10 +352,10 @@ async function main() {
   const sourceEntries = parseCharacterBuffEntries(SOURCE_PATH);
   const seenIds = new Set();
   const documents = sourceEntries.map((entry, index) => {
-    if (!entry.name) throw new Error("Character Buff entry is missing a name.");
+    if (!entry.name) throw new Error("Common Buff entry is missing a name.");
     const doc = createDocument(entry, index);
     if (seenIds.has(doc._id)) {
-      throw new Error(`Stable ID collision detected for Character Buff "${entry.name}".`);
+      throw new Error(`Stable ID collision detected for Common Buff "${entry.name}".`);
     }
     seenIds.add(doc._id);
     return doc;

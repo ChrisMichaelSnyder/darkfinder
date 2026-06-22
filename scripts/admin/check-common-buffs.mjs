@@ -3,10 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { ClassicLevel } from "classic-level";
+import { resolveBuffTargetKey, resolveChangeTypeKey } from "./common-buff-mappings.mjs";
 
 const ROOT = process.cwd();
-const SOURCE_PATH = path.resolve(ROOT, "data/character-buffs/character-buffs.yaml");
-const PACK_PATH = path.resolve(ROOT, "packs/character-buffs");
+const SOURCE_PATH = path.resolve(ROOT, "data/common-buffs/common-buffs.yaml");
+const PACK_PATH = path.resolve(ROOT, "packs/common-buffs");
 const ITEM_KEY_PREFIX = "!items!";
 
 const BUFF_CATEGORY_MAP = {
@@ -58,6 +59,10 @@ function parseBoolean(value, fallback = false) {
   if (["true", "yes", "1", "on"].includes(normalized)) return true;
   if (["false", "no", "0", "off"].includes(normalized)) return false;
   return fallback;
+}
+
+function descriptionContainsHtml(description) {
+  return /<[^>]+>/.test(String(description || ""));
 }
 
 function parseCharacterBuffEntries(filePath) {
@@ -170,6 +175,10 @@ function parseCharacterBuffEntries(filePath) {
 
 function stripHtmlToText(html) {
   return String(html || "")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "")
+    .replace(/<\/tr>/gi, "\n")
+    .replace(/<\/t[dh]>/gi, " ")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n")
     .replace(/<p[^>]*>/gi, "")
@@ -180,8 +189,25 @@ function stripHtmlToText(html) {
     .replace(/&gt;/gi, ">")
     .replace(/&quot;/gi, "\"")
     .replace(/&#39;/gi, "'")
+    .replace(/&mdash;/gi, "-")
+    .replace(/&ndash;/gi, "-")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function buildDescriptionHtml(description) {
+  const trimmed = String(description || "").trim();
+  if (!trimmed) return "";
+  if (descriptionContainsHtml(trimmed)) return trimmed;
+  return trimmed
+    .split("\n")
+    .map((line) => `<p>${String(line || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;")}</p>`)
+    .join("");
 }
 
 function resolveLimitedUsePeriod(label) {
@@ -190,6 +216,14 @@ function resolveLimitedUsePeriod(label) {
 
 function resolveBuffCategory(label) {
   return BUFF_CATEGORY_MAP[normalizeCompare(label)] || "";
+}
+
+function resolveBuffTarget(label) {
+  return resolveBuffTargetKey(label);
+}
+
+function resolveChangeType(label) {
+  return resolveChangeTypeKey(label);
 }
 
 function createStableId(name) {
@@ -206,7 +240,7 @@ function deriveInitialUsesValue(maxUsesFormula) {
 }
 
 async function readPackDocuments(folder) {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "darkfinder-character-buffs-check-"));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "darkfinder-common-buffs-check-"));
   const tempFolder = path.join(tempRoot, path.basename(folder));
   fs.cpSync(folder, tempFolder, { recursive: true });
 
@@ -241,76 +275,88 @@ async function main() {
   for (const entry of sourceEntries) {
     const doc = packById.get(createStableId(entry.name));
     if (!doc) {
-      errors.push(`Character Buff compendium entry is missing for "${entry.name}".`);
+      errors.push(`Common Buff compendium entry is missing for "${entry.name}".`);
       continue;
     }
 
     if (String(doc.img || "").trim() !== entry.icon) {
-      errors.push(`Character Buff icon for "${entry.name}" is out of sync.`);
+      errors.push(`Common Buff icon for "${entry.name}" is out of sync.`);
     }
 
-    const docText = stripHtmlToText(doc.system?.description?.value || "");
-    if (normalizeCompare(docText) !== normalizeCompare(entry.description)) {
-      errors.push(`Character Buff description for "${entry.name}" is out of sync.`);
+    const expectedDescriptionHtml = buildDescriptionHtml(entry.description);
+    const actualDescriptionHtml = String(doc.system?.description?.value || "").trim();
+    if (descriptionContainsHtml(entry.description)) {
+      if (normalizeCompare(actualDescriptionHtml) !== normalizeCompare(expectedDescriptionHtml)) {
+        errors.push(`Common Buff description HTML for "${entry.name}" is out of sync.`);
+      }
+    } else {
+      const docText = stripHtmlToText(actualDescriptionHtml);
+      if (normalizeCompare(docText) !== normalizeCompare(entry.description)) {
+        errors.push(`Common Buff description for "${entry.name}" is out of sync.`);
+      }
     }
 
     const expectedPer = resolveLimitedUsePeriod(entry.limitedUses || "Unlimited");
     if (String(doc.system?.uses?.per || "").trim() !== expectedPer) {
-      errors.push(`Character Buff limitedUses for "${entry.name}" is out of sync.`);
+      errors.push(`Common Buff limitedUses for "${entry.name}" is out of sync.`);
     }
 
     const expectedCategory = resolveBuffCategory(entry.category || "Miscellaneous");
     if (String(doc.system?.subType || "").trim() !== expectedCategory) {
-      errors.push(`Character Buff category for "${entry.name}" is out of sync.`);
+      errors.push(`Common Buff category for "${entry.name}" is out of sync.`);
     }
 
     if (Boolean(doc.system?.hideFromToken) !== Boolean(entry.hideFromToken)) {
-      errors.push(`Character Buff hideFromToken for "${entry.name}" is out of sync.`);
+      errors.push(`Common Buff hideFromToken for "${entry.name}" is out of sync.`);
     }
 
     if (String(doc.system?.uses?.maxFormula || "").trim() !== String(entry.maxUsesFormula || "").trim()) {
-      errors.push(`Character Buff maxUsesFormula for "${entry.name}" is out of sync.`);
+      errors.push(`Common Buff maxUsesFormula for "${entry.name}" is out of sync.`);
     }
 
     const expectedInitialUses = deriveInitialUsesValue(entry.maxUsesFormula);
     if (Number(doc.system?.uses?.max ?? NaN) !== expectedInitialUses) {
-      errors.push(`Character Buff max uses value for "${entry.name}" is out of sync.`);
+      errors.push(`Common Buff max uses value for "${entry.name}" is out of sync.`);
     }
     if (Number(doc.system?.uses?.value ?? NaN) !== expectedInitialUses) {
-      errors.push(`Character Buff current uses value for "${entry.name}" is out of sync.`);
+      errors.push(`Common Buff current uses value for "${entry.name}" is out of sync.`);
     }
 
     if (doc.folder !== null) {
-      errors.push(`Character Buff "${entry.name}" should be at the top level of the compendium.`);
+      errors.push(`Common Buff "${entry.name}" should be at the top level of the compendium.`);
     }
 
     const docChanges = Array.isArray(doc.system?.changes) ? doc.system.changes : [];
     if (docChanges.length !== entry.changes.length) {
-      errors.push(`Character Buff changes count for "${entry.name}" is out of sync.`);
+      errors.push(`Common Buff changes count for "${entry.name}" is out of sync.`);
       continue;
     }
 
     for (let index = 0; index < entry.changes.length; index += 1) {
       const sourceChange = entry.changes[index];
       const docChange = docChanges[index] || {};
-      if (String(docChange.subTarget || "").trim() !== sourceChange.target) {
-        errors.push(`Character Buff change target ${index + 1} for "${entry.name}" is out of sync.`);
+      const expectedTarget = resolveBuffTarget(sourceChange.target);
+      const actualTarget = String(docChange.target || docChange.subTarget || "").trim();
+      if (actualTarget !== expectedTarget) {
+        errors.push(`Common Buff change target ${index + 1} for "${entry.name}" is out of sync.`);
       }
       if (String(docChange.formula || "").trim() !== sourceChange.formula) {
-        errors.push(`Character Buff change formula ${index + 1} for "${entry.name}" is out of sync.`);
+        errors.push(`Common Buff change formula ${index + 1} for "${entry.name}" is out of sync.`);
       }
-      if (String(docChange.modifier || "").trim() !== sourceChange.type) {
-        errors.push(`Character Buff change type ${index + 1} for "${entry.name}" is out of sync.`);
+      const expectedType = resolveChangeType(sourceChange.type);
+      const actualType = String(docChange.type || docChange.modifier || "").trim();
+      if (actualType !== expectedType) {
+        errors.push(`Common Buff change type ${index + 1} for "${entry.name}" is out of sync.`);
       }
     }
   }
 
   if (packDocs.length !== sourceEntries.length) {
-    errors.push(`Character Buff compendium contains ${packDocs.length} entries but YAML defines ${sourceEntries.length}.`);
+    errors.push(`Common Buff compendium contains ${packDocs.length} entries but YAML defines ${sourceEntries.length}.`);
   }
 
   if (errors.length) fail(errors);
-  console.log("Character Buff compendium is in sync with YAML sources.");
+  console.log("Common Buff compendium is in sync with YAML sources.");
 }
 
 main().catch((error) => {

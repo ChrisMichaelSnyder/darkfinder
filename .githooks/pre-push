@@ -2,10 +2,10 @@
 set -eu
 
 echo "Validating macro layout..."
-echo "Synchronizing character buffs compendium..."
-node scripts/admin/sync-character-buffs.mjs
-echo "Validating character buffs compendium..."
-node scripts/admin/check-character-buffs.mjs
+echo "Synchronizing common buffs compendium..."
+node scripts/admin/sync-common-buffs.mjs
+echo "Validating common buffs compendium..."
+node scripts/admin/check-common-buffs.mjs
 echo "Synchronizing spell compendium..."
 node scripts/admin/sync-spell-cores-augments.mjs
 echo "Validating spell compendium..."
@@ -14,10 +14,11 @@ echo "Validating macro layout..."
 node scripts/admin/check-macro-layout.mjs
 
 if ! git diff --quiet -- \
-  data/character-buffs \
-  packs/character-buffs \
-  scripts/admin/sync-character-buffs.mjs \
-  scripts/admin/check-character-buffs.mjs \
+  data/common-buffs \
+  packs/common-buffs \
+  scripts/admin/sync-common-buffs.mjs \
+  scripts/admin/check-common-buffs.mjs \
+  scripts/admin/common-buff-mappings.mjs \
   data/spell-cores-augments \
   packs/spell-cores-augments \
   scripts/admin/macro-compendium-config.mjs \

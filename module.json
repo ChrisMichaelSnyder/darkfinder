@@ -2,10 +2,10 @@
   "id": "darkfinder",
   "title": "Darkfinder",
   "description": "Darkfinder tools, macros, and compendium-backed utilities for Pathfinder 1e.",
-  "version": "0.1.24",
+  "version": "0.1.25",
   "url": "https://github.com/ChrisMichaelSnyder/darkfinder",
   "manifest": "https://raw.githubusercontent.com/ChrisMichaelSnyder/darkfinder/main/module.json",
-  "download": "https://github.com/ChrisMichaelSnyder/darkfinder/releases/download/v0.1.24/darkfinder.zip",
+  "download": "https://github.com/ChrisMichaelSnyder/darkfinder/releases/download/v0.1.25/darkfinder.zip",
   "authors": [
     {
       "name": "csnyd"
@@ -47,11 +47,11 @@
       }
     },
     {
-      "name": "character-buffs",
-      "label": "Character Buffs",
+      "name": "common-buffs",
+      "label": "Common Buffs",
       "type": "Item",
       "system": "pf1",
-      "path": "packs/character-buffs"
+      "path": "packs/common-buffs"
     },
     {
       "name": "spell-cores-augments",
@@ -68,7 +68,7 @@
       "packs": [
         "darkfinder-player-macros",
         "darkfinder-gm-macros",
-        "character-buffs",
+        "common-buffs",
         "spell-cores-augments"
       ]
     }
