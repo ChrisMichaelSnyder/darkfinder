@@ -7,8 +7,6 @@ const ROOT = process.cwd();
 const SOURCE_PATH = path.resolve(ROOT, "data/character-buffs/character-buffs.yaml");
 const PACK_PATH = path.resolve(ROOT, "packs/character-buffs");
 const ITEM_KEY_PREFIX = "!items!";
-const FOLDER_KEY_PREFIX = "!folders!";
-const COMPENDIUM_FOLDER_NAME = "Character Buffs";
 
 const STABLE_DOCUMENT_STATS = {
   coreVersion: "13.346",
@@ -20,6 +18,15 @@ const STABLE_DOCUMENT_STATS = {
   compendiumSource: null,
   duplicateSource: null,
   exportSource: null,
+};
+
+const BUFF_CATEGORY_MAP = {
+  miscellaneous: "misc",
+  misc: "misc",
+  permanent: "perm",
+  perm: "perm",
+  temporary: "temp",
+  temp: "temp",
 };
 
 const LIMITED_USE_PERIOD_MAP = {
@@ -56,6 +63,14 @@ function unquoteYamlScalar(value) {
   return text;
 }
 
+function parseBoolean(value, fallback = false) {
+  const normalized = normalizeCompare(value);
+  if (!normalized) return fallback;
+  if (["true", "yes", "1", "on"].includes(normalized)) return true;
+  if (["false", "no", "0", "off"].includes(normalized)) return false;
+  return fallback;
+}
+
 function escapeHtml(value) {
   return String(value)
     .replace(/&/g, "&amp;")
@@ -87,6 +102,8 @@ function parseCharacterBuffEntries(filePath) {
       name: normalizeText(current.name),
       icon: normalizeText(current.icon),
       description: current.description.join("\n").trim(),
+      category: normalizeText(current.category),
+      hideFromToken: parseBoolean(current.hideFromToken, false),
       limitedUses: normalizeText(current.limitedUses),
       maxUsesFormula: normalizeText(current.maxUsesFormula),
       changes: current.changes.map((change) => ({
@@ -111,6 +128,8 @@ function parseCharacterBuffEntries(filePath) {
         name: "",
         icon: "",
         description: [],
+        category: "Miscellaneous",
+        hideFromToken: "false",
         limitedUses: "Unlimited",
         maxUsesFormula: "",
         changes: [],
@@ -187,6 +206,15 @@ function resolveLimitedUsePeriod(label) {
   return mapped;
 }
 
+function resolveBuffCategory(label) {
+  const normalized = normalizeCompare(label);
+  const mapped = BUFF_CATEGORY_MAP[normalized];
+  if (!mapped) {
+    throw new Error(`Unsupported category value "${label}". Expected Miscellaneous, Permanent, or Temporary.`);
+  }
+  return mapped;
+}
+
 function deriveInitialUsesValue(maxUsesFormula) {
   const numeric = Number.parseFloat(String(maxUsesFormula || "").trim());
   return Number.isFinite(numeric) ? numeric : 0;
@@ -198,29 +226,6 @@ function createStableId(entry) {
     .update(`character-buff::${normalizeCompare(entry.name)}`)
     .digest("hex")
     .slice(0, 16);
-}
-
-function createStableFolderId() {
-  return crypto
-    .createHash("sha1")
-    .update(`folder::${normalizeCompare(COMPENDIUM_FOLDER_NAME)}`)
-    .digest("hex")
-    .slice(0, 16);
-}
-
-function createFolderDocument() {
-  return {
-    _id: createStableFolderId(),
-    name: COMPENDIUM_FOLDER_NAME,
-    sorting: "a",
-    sort: 100000,
-    folder: null,
-    color: null,
-    description: "",
-    type: "Item",
-    flags: {},
-    _stats: STABLE_DOCUMENT_STATS,
-  };
 }
 
 function createStableChangeId(entry, index) {
@@ -244,8 +249,9 @@ function createChangeData(entry, index) {
   };
 }
 
-function createDocument(entry, index, folderId) {
+function createDocument(entry, index) {
   const usesPer = resolveLimitedUsePeriod(entry.limitedUses || "Unlimited");
+  const buffCategory = resolveBuffCategory(entry.category || "Miscellaneous");
   const maxUsesFormula = normalizeText(entry.maxUsesFormula);
   const initialUsesValue = deriveInitialUsesValue(maxUsesFormula);
 
@@ -259,8 +265,8 @@ function createDocument(entry, index, folderId) {
         instructions: "",
       },
       active: false,
-      subType: "misc",
-      hideFromToken: false,
+      subType: buffCategory,
+      hideFromToken: !!entry.hideFromToken,
       level: 0,
       duration: {
         value: "",
@@ -289,7 +295,7 @@ function createDocument(entry, index, folderId) {
     },
     img: entry.icon || "icons/svg/dice-target.svg",
     effects: [],
-    folder: folderId,
+    folder: null,
     flags: {},
     sort: (index + 1) * 100000,
     ownership: {
@@ -299,15 +305,12 @@ function createDocument(entry, index, folderId) {
   };
 }
 
-async function rebuildPack(folder, folderDocuments, itemDocuments) {
+async function rebuildPack(folder, itemDocuments) {
   fs.rmSync(folder, { recursive: true, force: true });
 
   const db = new ClassicLevel(folder, { valueEncoding: "utf8" });
   await db.open();
   try {
-    for (const folderDoc of folderDocuments) {
-      await db.put(`${FOLDER_KEY_PREFIX}${folderDoc._id}`, JSON.stringify(folderDoc));
-    }
     for (const doc of itemDocuments) {
       await db.put(`${ITEM_KEY_PREFIX}${doc._id}`, JSON.stringify(doc));
     }
@@ -322,12 +325,10 @@ async function rebuildPack(folder, folderDocuments, itemDocuments) {
 
 async function main() {
   const sourceEntries = parseCharacterBuffEntries(SOURCE_PATH);
-  const folderDocuments = [createFolderDocument()];
-  const folderId = folderDocuments[0]._id;
   const seenIds = new Set();
   const documents = sourceEntries.map((entry, index) => {
     if (!entry.name) throw new Error("Character Buff entry is missing a name.");
-    const doc = createDocument(entry, index, folderId);
+    const doc = createDocument(entry, index);
     if (seenIds.has(doc._id)) {
       throw new Error(`Stable ID collision detected for Character Buff "${entry.name}".`);
     }
@@ -335,11 +336,10 @@ async function main() {
     return doc;
   });
 
-  await rebuildPack(PACK_PATH, folderDocuments, documents);
+  await rebuildPack(PACK_PATH, documents);
 
   console.log(JSON.stringify({
     sourceEntries: sourceEntries.length,
-    folders: folderDocuments.length,
     rebuilt: documents.length,
     packPath: path.relative(ROOT, PACK_PATH).replace(/\\/g, "/"),
   }, null, 2));

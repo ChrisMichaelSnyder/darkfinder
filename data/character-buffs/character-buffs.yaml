@@ -3,6 +3,8 @@ entries:
   #   icon: "icons/svg/dice-target.svg"
   #   description: |
   #     Example buff description.
+  #   category: "Miscellaneous"
+  #   hideFromToken: false
   #   limitedUses: "Unlimited"
   #   maxUsesFormula: ""
   #   changes:
@@ -18,5 +20,7 @@ entries:
 
       Fail = Lose 1 Resolve Point
       Nat 20 = Stabilize
+    category: "Permanent"
+    hideFromToken: true
     limitedUses: "Per Day"
     maxUsesFormula: "3+@abilities.con.mod"

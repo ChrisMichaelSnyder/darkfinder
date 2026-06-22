@@ -8,8 +8,15 @@ const ROOT = process.cwd();
 const SOURCE_PATH = path.resolve(ROOT, "data/character-buffs/character-buffs.yaml");
 const PACK_PATH = path.resolve(ROOT, "packs/character-buffs");
 const ITEM_KEY_PREFIX = "!items!";
-const FOLDER_KEY_PREFIX = "!folders!";
-const COMPENDIUM_FOLDER_NAME = "Character Buffs";
+
+const BUFF_CATEGORY_MAP = {
+  miscellaneous: "misc",
+  misc: "misc",
+  permanent: "perm",
+  perm: "perm",
+  temporary: "temp",
+  temp: "temp",
+};
 
 const LIMITED_USE_PERIOD_MAP = {
   unlimited: "unlimited",
@@ -45,6 +52,14 @@ function unquoteYamlScalar(value) {
   return text;
 }
 
+function parseBoolean(value, fallback = false) {
+  const normalized = normalizeCompare(value);
+  if (!normalized) return fallback;
+  if (["true", "yes", "1", "on"].includes(normalized)) return true;
+  if (["false", "no", "0", "off"].includes(normalized)) return false;
+  return fallback;
+}
+
 function parseCharacterBuffEntries(filePath) {
   const source = fs.readFileSync(filePath, "utf8").replace(/\r\n/g, "\n");
   const lines = source.split("\n");
@@ -67,6 +82,8 @@ function parseCharacterBuffEntries(filePath) {
       name: normalizeText(current.name),
       icon: normalizeText(current.icon),
       description: current.description.join("\n").trim(),
+      category: normalizeText(current.category),
+      hideFromToken: parseBoolean(current.hideFromToken, false),
       limitedUses: normalizeText(current.limitedUses),
       maxUsesFormula: normalizeText(current.maxUsesFormula),
       changes: current.changes.map((change) => ({
@@ -91,6 +108,8 @@ function parseCharacterBuffEntries(filePath) {
         name: "",
         icon: "",
         description: [],
+        category: "Miscellaneous",
+        hideFromToken: "false",
         limitedUses: "Unlimited",
         maxUsesFormula: "",
         changes: [],
@@ -169,6 +188,10 @@ function resolveLimitedUsePeriod(label) {
   return LIMITED_USE_PERIOD_MAP[normalizeCompare(label)] || "";
 }
 
+function resolveBuffCategory(label) {
+  return BUFF_CATEGORY_MAP[normalizeCompare(label)] || "";
+}
+
 function createStableId(name) {
   return crypto
     .createHash("sha1")
@@ -191,17 +214,11 @@ async function readPackDocuments(folder) {
   await db.open();
   try {
     const docs = [];
-    const folders = [];
     for await (const [key, value] of db.iterator()) {
-      if (String(key).startsWith(ITEM_KEY_PREFIX)) {
-        docs.push(JSON.parse(value));
-        continue;
-      }
-      if (String(key).startsWith(FOLDER_KEY_PREFIX)) {
-        folders.push(JSON.parse(value));
-      }
+      if (!String(key).startsWith(ITEM_KEY_PREFIX)) continue;
+      docs.push(JSON.parse(value));
     }
-    return { docs, folders };
+    return docs;
   } finally {
     await db.close();
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -218,16 +235,8 @@ function fail(messages) {
 async function main() {
   const errors = [];
   const sourceEntries = parseCharacterBuffEntries(SOURCE_PATH);
-  const { docs: packDocs, folders: packFolders } = await readPackDocuments(PACK_PATH);
+  const packDocs = await readPackDocuments(PACK_PATH);
   const packById = new Map(packDocs.map((doc) => [String(doc._id), doc]));
-  const folderById = new Map(packFolders.map((folder) => [String(folder._id), folder]));
-
-  const matchingFolders = packFolders.filter((folder) => normalizeCompare(folder.name) === normalizeCompare(COMPENDIUM_FOLDER_NAME));
-  if (!matchingFolders.length) {
-    errors.push(`Character Buff compendium folder "${COMPENDIUM_FOLDER_NAME}" is missing.`);
-  } else if (matchingFolders.length > 1) {
-    errors.push(`Character Buff compendium folder "${COMPENDIUM_FOLDER_NAME}" is duplicated.`);
-  }
 
   for (const entry of sourceEntries) {
     const doc = packById.get(createStableId(entry.name));
@@ -250,6 +259,15 @@ async function main() {
       errors.push(`Character Buff limitedUses for "${entry.name}" is out of sync.`);
     }
 
+    const expectedCategory = resolveBuffCategory(entry.category || "Miscellaneous");
+    if (String(doc.system?.subType || "").trim() !== expectedCategory) {
+      errors.push(`Character Buff category for "${entry.name}" is out of sync.`);
+    }
+
+    if (Boolean(doc.system?.hideFromToken) !== Boolean(entry.hideFromToken)) {
+      errors.push(`Character Buff hideFromToken for "${entry.name}" is out of sync.`);
+    }
+
     if (String(doc.system?.uses?.maxFormula || "").trim() !== String(entry.maxUsesFormula || "").trim()) {
       errors.push(`Character Buff maxUsesFormula for "${entry.name}" is out of sync.`);
     }
@@ -262,11 +280,8 @@ async function main() {
       errors.push(`Character Buff current uses value for "${entry.name}" is out of sync.`);
     }
 
-    const assignedFolder = folderById.get(String(doc.folder || ""));
-    if (!assignedFolder) {
-      errors.push(`Character Buff "${entry.name}" is not assigned to a compendium folder.`);
-    } else if (normalizeCompare(assignedFolder.name) !== normalizeCompare(COMPENDIUM_FOLDER_NAME)) {
-      errors.push(`Character Buff "${entry.name}" is assigned to "${assignedFolder.name}" instead of "${COMPENDIUM_FOLDER_NAME}".`);
+    if (doc.folder !== null) {
+      errors.push(`Character Buff "${entry.name}" should be at the top level of the compendium.`);
     }
 
     const docChanges = Array.isArray(doc.system?.changes) ? doc.system.changes : [];
