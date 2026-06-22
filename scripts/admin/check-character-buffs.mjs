@@ -128,8 +128,16 @@ function parseCharacterBuffEntries(filePath) {
       continue;
     }
 
+    if (collectingDescription) {
+      if (line.startsWith("      ")) {
+        current.description.push(line.slice(6));
+        continue;
+      }
+      collectingDescription = false;
+    }
+
     const simpleField = line.match(/^    ([A-Za-z]+):\s*(.*)$/);
-    if (simpleField && !collectingDescription) {
+    if (simpleField) {
       const [, key, rawValue] = simpleField;
       if (key === "changes") {
         pushCurrentChange();
@@ -140,14 +148,6 @@ function parseCharacterBuffEntries(filePath) {
       current[key] = unquoteYamlScalar(rawValue);
       inChanges = false;
       continue;
-    }
-
-    if (collectingDescription) {
-      if (line.startsWith("      ")) {
-        current.description.push(line.slice(6));
-        continue;
-      }
-      collectingDescription = false;
     }
 
     const changeStart = line.match(/^      - ([A-Za-z]+):\s*(.*)$/);
