@@ -466,9 +466,9 @@ entries:
       (+1 ): Change the DR to  -/adamantine
       (+2 ): Change the DR  to -/-
  
-  - icon: "icons/magic/holy/angel-winged-humanoid-blue.webp"
+  - icon: "icons/magic/control/debuff-energy-hold-blue-yellow.webp"
     text: |
-      Levitate
+      Lift
       Type: Core
       SP Cost: 1
       School: Transmutation

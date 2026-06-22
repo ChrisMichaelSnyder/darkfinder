@@ -1,0 +1,22 @@
+entries:
+  # - name: "Example Buff"
+  #   icon: "icons/svg/dice-target.svg"
+  #   description: |
+  #     Example buff description.
+  #   limitedUses: "Unlimited"
+  #   maxUsesFormula: ""
+  #   changes:
+  #     - target: "ac"
+  #       formula: "2"
+  #       type: "dodge"
+
+  - name: "Resolve"
+    icon: "systems/pf1/icons/skills/blood_04.jpg"
+    description: |
+      Resolve Check: [[1d20 + @abilities.con.mod]]
+      DC 10
+
+      Fail = Lose 1 Resolve Point
+      Nat 20 = Stabilize
+    limitedUses: "Per Day"
+    maxUsesFormula: "3+@abilities.con.mod"
