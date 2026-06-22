@@ -70,6 +70,58 @@ npm run check:macro-layout
 npm run prepare:macro-packs
 ```
 
+## Spell wiki sync
+
+Spell Cores and Spell Augments are authored from the repo YAML files:
+
+- `data/spell-cores-augments/spell-cores.yaml`
+- `data/spell-cores-augments/spell-augments.yaml`
+
+You can export the generated wiki sections locally with:
+
+```powershell
+npm run export:spell-wiki
+```
+
+That writes preview files under `generated/wiki/`.
+
+To dry-run the live page replacement without publishing:
+
+```powershell
+npm run sync:spell-wiki -- --dry-run true
+```
+
+To publish the managed `Spell Augments` and `Spell Cores` sections on the Miraheze page:
+
+```powershell
+$env:WIKI_USER='your-username'
+$env:WIKI_PASSWORD='your-password'
+npm run sync:spell-wiki
+```
+
+The wiki sync only replaces the `==Spell Augments==` and `==Spell Cores==` section bodies on `Spell_System`; it leaves the rest of the page alone.
+
+## Combined deploy
+
+The full post-release target deploy can now run wiki sync and Foundry server updates in one command:
+
+```powershell
+npm run deploy:release-targets
+```
+
+That workflow runs in this order:
+
+1. `sync-spell-wiki`
+2. `update-foundry-modules`
+
+Useful options:
+
+```powershell
+npm run deploy:release-targets -- --dry-run-wiki true
+npm run deploy:release-targets -- --skip-wiki true
+npm run deploy:release-targets -- --skip-foundry true
+```
+
 This repo also includes a tracked `.githooks/pre-push` hook. If you run:
 
 ```powershell

@@ -1,117 +1,4 @@
 entries:
-  - icon: "icons/magic/control/mouth-smile-deception-purple.webp"
-    text: |
-      Allure
-      Type: Core
-      SP Cost: 1
-      School: Enchantment
-      Casting Time: Standard
-      Range: Touch
-      Target: 1 creature
-      Duration: Concentration
-      Saving Throw: Will
-      Description:
-      This spell only works on Humanoids.
-      Affected creatures act as though you (but not your allies) are their best friend. You cannot order affected creatures around anymore than you could order around your best friend, but you could try to convince them to do what you want with a Bluff or Diplomacy check and the creature receives a -10 penalty to Sense Motive checks against you since they view your words in the most favorable way. This spell automatically ends if you or your allies attack the affected creature.
-      A creature that succeeds their saving throw against this spell still takes a -2 penalty to Sense Motive checks against you for the spell's duration.
-      Core Augments:
-      (+0 ): This spell instead works on Animals.
-      (+4 ): This spell works on any creature type.
-
-  - icon: "icons/skills/melee/strike-scythe-fire-green.webp"
-    text: |
-      Warp
-      Type: Core
-      SP Cost: 1
-      School: Transmutation
-      Casting Time: Standard
-      Range: Touch
-      Target: 1 object or 5ft area made of a particular material
-      Duration: Concentration
-      Saving Throw: Fortitude (object)
-      Description:
-      This spell warps an object or area made mostly of wood, cloth, or leather. You cannot sculpt or make specific changes to the object or area, but if the object served a purpose before it was warped, it no longer can serve that purpose. For instance, a door can no longer open or close, a weapon couldn't be used to attack with, a rowboat could no longer float etc.
-      The object or area must be able to fit within a 5 ft square.
-      Core Augments:
-      (+1*): Increase the maximum size of the object by one 5 ft square.
-      (+2 ): Add stone, dirt, and clay to the list of materials that can be warped by this spell
-      (+4 ): Add metal to the list of materials that can be warped by this spell.
-      (+3 ): You can make precise and intentional changes to the targeted material as if sculpting it like clay. Particularly complex items may require a Crafting check to accurately sculpt.
-  
-  - icon: "icons/magic/defensive/barrier-shield-dome-blue-purple.webp"
-    text: |
-      Ward
-      Type: Core
-      SP Cost: 1
-      School: Abjuration
-      Casting Time: Immediate
-      Range: Personal
-      Target: 1 creature
-      Duration: 1 Round
-      Saving Throw: Will (harmless)
-      Description:
-      You gain a +1 shield bonus to AC.
-      Special: The "Duration" mod costs twice as much to apply to this spell core.
-      Core Augments:
-      (+1*): Increase the shield bonus by  +1
-      (+2 ): Grants immunity to targeted force spells with SP costs less than or equal to the SP cost of this spell.
-  
-  - icon: "icons/magic/control/debuff-energy-hold-pink.webp"
-    text: |
-      Unravel
-      Type: Core
-      SP Cost: 1
-      School: Abjuration
-      Casting Time: Standard
-      Range: Touch
-      Target: 1 creature or object
-      Duration: Instantaneous
-      Saving Throw: None
-      Description:
-      Select a single spell effect on your target. You must know which spell you are targeting, or at least be able to describe its effects. For example, if a creature seems like their speed has been magically enhanced, simply saying "I target the spell affecting that creature's speed" is sufficient. If the effect named is not magical, this spell has no effect. If the total SP cost of this spell is greater than the cost of the spell effect then the effect ends as if its duration had expired or the caster dropped concentration on it. If the total SP cost of this spell is less than or equal to the cost of the target effect, then you and the targeted spellcaster must make opposed caster level checks and add the total cost of their respective spells to their rolls. If you meet or exceed the target's caster level check then the effect ends.
-      Core Augments:
-      (+1*): You may apply this core augment to the spell dynamically as it is being cast.
-      (+4*): Select one additional ongoing effect per target.
-  
-  - icon: "icons/magic/control/energy-stream-link-white.webp"
-    text: |
-      Translocate
-      Type: Core
-      SP Cost: 1
-      School: Conjuration
-      Casting Time: Standard
-      Range: Personal
-      Target: 1 creature or object
-      Duration: Instrantaneous
-      Saving Throw: Fortitude
-      Description:
-      You teleport the target to a square you can see clearly within 30 ft. The destination square must be on the ground unless the target is capable of flight.
-      Core Augments:
-      (+1*): Increase the distance you teleport the target to by +30 ft.
-      (+6 ): You do not need to see the location you teleport the target to. If you have not been to the location you are teleporting the target to then you arrive off target. Exactly how off target is subject to GM discretion.
-      (+4 ): For each foot of distance you could teleport the target, you can instead teleport the target up to 10 miles. This Core Augment might not be very effective without also being able to teleport to a location you can't see.
-      (+6 ): You can teleport the target to a different Plane that you are aware of. The exact destination on that plane is up to GM discretion, but upon arrival you may also teleport the target any remaining distance prior fully materializing into the plane.
-      (-2 ): You only use this spell to teleport to a location you have spent at least 1 hour preparing for your arrival. You may only have one such location prepared at one time.
-      (+1*): You may have 2 additional locations prepared for your arrival.
-  
-  - icon: "icons/magic/control/fear-fright-monster-grin-purple-blue.webp"
-    text: |
-      Terror
-      Type: Core
-      SP Cost: 1
-      School: Enchantment
-      Casting Time: Standard
-      Range: Touch
-      Target: 1 creature
-      Duration: Concentration
-      Saving Throw: Will
-      Description:
-      The affected creature gains the frightened condition. Affected creatures who remain out of line of effect to the caster of this spell for 1 round gain an additional saving throw at the end of their turns.
-      Creatures that save against this spell are shaken for 1 round.
-      Core Augments:
-      (+4 ): Affected creatures panicked rather than frightened.
-      (+4 ): This spell can affect creatures that are normally immune to fear.
-  
   - icon: "icons/magic/death/undead-skeleton-rags-fire-green.webp"
     text: |
       Animate
@@ -146,7 +33,32 @@ entries:
       Core Augments:
       (+1*): Increase the armor bonus by +1 to a total maximum of +6.
       (+2*): Increase the armor bonus by +1.
-  
+
+
+  - icon: "icons/magic/perception/third-eye-blue-red.webp"
+    text: |
+      Awareness
+      Type: Core
+      SP Cost: 1
+      School: Divination
+      Casting Time: Standard
+      Range: Personal
+      Target: 1 creature
+      Duration: Concentration
+      Saving Throw: Will (harmless)
+      Description:
+      You enter a heightened state of awareness that allows you to notice more about your surroundings and recall information effortlessly. You gain a +2 competence bonus on Perception checks.
+      Core Augments:
+      (+1*): Increase the bonus to perception granted by +1.
+      (+2 ): The target gains Darkvision 10 ft.
+      (+1 ): The target gains Scent 20 ft.
+      (+3 ): The target gains Tremorsense 10 ft.
+      (+4 ): The target gains Blindsense 10 ft.
+      (+6 ): The target gains Blindsight 10 ft.
+      (+1*): Increase the range of one of your senses by +10ft (even one not granted by this spell core)
+
+
+
   - icon: "icons/magic/earth/barrier-stone-explosion-spiked.webp"
     text: |
       Barricade
@@ -232,16 +144,21 @@ entries:
       Duration: Concentration
       Saving Throw: None
       Description:
-      The target can speak directly to a particular Humanoid creature as well as others that share their heritage, bypassing the need for a shared language. The creature must be willing or otherwise capable of communication. The target can understand the creature's vocalizations, body language, or psychic impressions as coherent speech, and it can understand the target in return. The creature does not become more friendly or more likely to help the target unless you use Diplomacy, Bluff, or Intimidate as normal.
+      The target can choose a particular Humanoid creature in sight when the spell is cast. The target gains the ability to understand (but not speak to) that creature as well as others nearby that creature that share a similar heritage with them, bypassing the need for a shared language. The target can understand the chosen creature's vocalizations, body language, or psychic impressions as coherent speech, but the chosen creature does not automatically gain the ability to understand the target in turn. The chosen creature does not become more friendly or more likely to help the target unless they use Diplomacy, Bluff, or Intimidate as normal.
       Core Augments:
-      (+0 ): You can speak to Animals instead of Humanoids.
-      (+0 ): You can speak to Magical Beasts instead of Humanoids.
-      (+0 ): You can speak to Vermin instead of Humanoids.
-      (+2 ): You may also speak to Aberrations with this spell
-      (+2 ): You may also speak to Constructs with this spell
-      (+2 ): You may also speak to Dragons with this spell
-      (+2 ): You may also speak to Outsiders with this spell
-      (+2 ): You may also speak to Undead with this spell
+      (+2 ): The chosen creature can also understand the targets' speech just as well as the target can.
+      (+0 ): The target can understand Animals instead of Humanoids.
+      (+0 ): The target can understand Magical Beasts instead of Humanoids.
+      (+0 ): The target can understand Vermin instead of Humanoids.
+      (+1 ): The target can understand Animals with this spell.
+      (+1 ): The target can also understand Magical Beasts in addition to other creature types with this spell.
+      (+1 ): The target can also understand Vermin in addition to other creature types with this spell.
+      (+2 ): The target can also understand Aberrations in addition to other creature types with this spell.
+      (+2 ): The target can also understand Constructs in addition to other creature types with this spell.
+      (+2 ): The target can also understand Dragons in addition to other creature types with this spell.
+      (+2 ): The target can also understand Outsiders in addition to other creature types with this spell.
+      (+2 ): The target can also understand Undead in addition to other creature types with this spell.
+
  
   - icon: "icons/magic/unholy/hands-praying-fire-green.webp"
     text: |
@@ -466,24 +383,6 @@ entries:
       (+1 ): Change the DR to  -/adamantine
       (+2 ): Change the DR  to -/-
  
-  - icon: "icons/magic/control/debuff-energy-hold-blue-yellow.webp"
-    text: |
-      Lift
-      Type: Core
-      SP Cost: 1
-      School: Transmutation
-      Casting Time: Standard
-      Range: Touch
-      Target: 1 creature or object
-      Duration: Concentration
-      Saving Throw: Fortitude (object)
-      Description:
-      For each round of this spell you may move the target 30 feet in any direction. You can even move the target into the air but each square moved upward costs double movement. A creature or attended object that starts its turn in the air receives a saving throw to end the effect early.
-      The maximum size the target can be is diminutive for creatures or 5 pounds for objects.
-      If the target succeeds their saving throw, they either fall prone, or, if targeting an attended item, the creature holding it can choose to either let go of the item and let it fall to the ground, or they can hold onto it but fall prone.
-      Core Augments:
-      (+1*): Increase the speed you can move your target by +10 feet.
-      (+1*): Increase the maximum size a target can be by 1 size category and multiply the weight limit for objects by x3.
  
   - icon: "icons/magic/control/debuff-chains-shackles-movement-purple.webp"
     text: |
@@ -503,6 +402,27 @@ entries:
       (+2 ): Change the casting time to Immediate.
       (+1 ): The duration changes to 1 Round.
       (+6 ): The duration changes to Concentration.
+
+
+
+  - icon: "icons/magic/control/debuff-energy-hold-blue-yellow.webp"
+    text: |
+      Lift
+      Type: Core
+      SP Cost: 1
+      School: Transmutation
+      Casting Time: Standard
+      Range: Touch
+      Target: 1 creature or object
+      Duration: Concentration
+      Saving Throw: Fortitude (object)
+      Description:
+      For each round of this spell you may move the target 30 feet in any direction. You can even move the target into the air but each square moved upward costs double movement. A creature or attended object that starts its turn in the air receives a saving throw to end the effect early.
+      The maximum size the target can be is diminutive for creatures or 5 pounds for objects.
+      If the target succeeds their saving throw, they either fall prone, or, if targeting an attended item, the creature holding it can choose to either let go of the item and let it fall to the ground, or they can hold onto it but fall prone.
+      Core Augments:
+      (+1*): Increase the speed you can move your target by +10 feet.
+      (+1*): Increase the maximum size a target can be by 1 size category and multiply the weight limit for objects by x3.
 
   
   - icon: "icons/skills/movement/feet-winged-boots-brown.webp"
@@ -544,28 +464,6 @@ entries:
       The target is forced to concentrate on this spell as well. They cannot willingly dismiss this spell.
       Core Augments:
       (1*): This Augment does nothing other than increase the cost of this spell.
- 
-  - icon: "icons/magic/perception/third-eye-blue-red.webp"
-    text: |
-      Awareness
-      Type: Core
-      SP Cost: 1
-      School: Divination
-      Casting Time: Standard
-      Range: Personal
-      Target: 1 creature
-      Duration: Concentration
-      Saving Throw: Will (harmless)
-      Description:
-      You enter a heightened state of awareness that allows you to notice more about your surroundings and recall information effortlessly. You gain a +2 competence bonus on Perception checks.
-      Core Augments:
-      (+1*): Increase the bonus to perception granted by +1.
-      (+2 ): The target gains Darkvision 10 ft.
-      (+1 ): The target gains Scent 20 ft.
-      (+3 ): The target gains Tremorsense 10 ft.
-      (+4 ): The target gains Blindsense 10 ft.
-      (+6 ): The target gains Blindsight 10 ft.
-      (+1*): Increase the range of one of your senses by +10ft (even one not granted by this spell core)
 
 
   - icon: "icons/environment/traps/cage-grey-steel.webp"
@@ -718,4 +616,106 @@ entries:
       Core Augments:
       (+1*): Increase the escape DC by +2.
       (+2 ): The target instead gains the Grappled condition, but it still requires a strength or escape artist check to get out, not a CMB check.
+
+
+  - icon: "icons/magic/control/fear-fright-monster-grin-purple-blue.webp"
+    text: |
+      Terror
+      Type: Core
+      SP Cost: 1
+      School: Enchantment
+      Casting Time: Standard
+      Range: Touch
+      Target: 1 creature
+      Duration: Concentration
+      Saving Throw: Will
+      Description:
+      The affected creature gains the frightened condition. Affected creatures who remain out of line of effect to the caster of this spell for 1 round gain an additional saving throw at the end of their turns.
+      Creatures that save against this spell are shaken for 1 round.
+      Core Augments:
+      (+4 ): Affected creatures panicked rather than frightened.
+      (+4 ): This spell can affect creatures that are normally immune to fear.
+
+
+  - icon: "icons/magic/control/energy-stream-link-white.webp"
+    text: |
+      Translocate
+      Type: Core
+      SP Cost: 1
+      School: Conjuration
+      Casting Time: Standard
+      Range: Personal
+      Target: 1 creature or object
+      Duration: Instrantaneous
+      Saving Throw: Fortitude
+      Description:
+      You teleport the target to a square you can see clearly within 30 ft. The destination square must be on the ground unless the target is capable of flight.
+      Core Augments:
+      (+1*): Increase the distance you teleport the target to by +30 ft.
+      (+6 ): You do not need to see the location you teleport the target to. If you have not been to the location you are teleporting the target to then you arrive off target. Exactly how off target is subject to GM discretion.
+      (+4 ): For each foot of distance you could teleport the target, you can instead teleport the target up to 10 miles. This Core Augment might not be very effective without also being able to teleport to a location you can't see.
+      (+6 ): You can teleport the target to a different Plane that you are aware of. The exact destination on that plane is up to GM discretion, but upon arrival you may also teleport the target any remaining distance prior fully materializing into the plane.
+      (-2 ): You only use this spell to teleport to a location you have spent at least 1 hour preparing for your arrival. You may only have one such location prepared at one time.
+      (+1*): You may have 2 additional locations prepared for your arrival.
+  
+
+
+  - icon: "icons/magic/control/debuff-energy-hold-pink.webp"
+    text: |
+      Unravel
+      Type: Core
+      SP Cost: 1
+      School: Abjuration
+      Casting Time: Standard
+      Range: Touch
+      Target: 1 creature or object
+      Duration: Instantaneous
+      Saving Throw: None
+      Description:
+      Select a single spell effect on your target. You must know which spell you are targeting, or at least be able to describe its effects. For example, if a creature seems like their speed has been magically enhanced, simply saying "I target the spell affecting that creature's speed" is sufficient. If the effect named is not magical, this spell has no effect. If the total SP cost of this spell is greater than the cost of the spell effect then the effect ends as if its duration had expired or the caster dropped concentration on it. If the total SP cost of this spell is less than or equal to the cost of the target effect, then you and the targeted spellcaster must make opposed caster level checks and add the total cost of their respective spells to their rolls. If you meet or exceed the target's caster level check then the effect ends.
+      Core Augments:
+      (+1*): You may apply this core augment to the spell dynamically as it is being cast.
+      (+4*): Select one additional ongoing effect per target.
+
+
+  - icon: "icons/magic/defensive/barrier-shield-dome-blue-purple.webp"
+    text: |
+      Ward
+      Type: Core
+      SP Cost: 1
+      School: Abjuration
+      Casting Time: Immediate
+      Range: Personal
+      Target: 1 creature
+      Duration: 1 Round
+      Saving Throw: Will (harmless)
+      Description:
+      You gain a +1 shield bonus to AC.
+      Special: The "Duration" mod costs twice as much to apply to this spell core.
+      Core Augments:
+      (+1*): Increase the shield bonus by  +1
+      (+2 ): Grants immunity to targeted force spells with SP costs less than or equal to the SP cost of this spell.
+
+
+  - icon: "icons/skills/melee/strike-scythe-fire-green.webp"
+    text: |
+      Warp
+      Type: Core
+      SP Cost: 1
+      School: Transmutation
+      Casting Time: Standard
+      Range: Touch
+      Target: 1 object or 5ft area made of a particular material
+      Duration: Concentration
+      Saving Throw: Fortitude (object)
+      Description:
+      This spell warps an object or area made mostly of wood, cloth, or leather. You cannot sculpt or make specific changes to the object or area, but if the object served a purpose before it was warped, it no longer can serve that purpose. For instance, a door can no longer open or close, a weapon couldn't be used to attack with, a rowboat could no longer float etc.
+      The object or area must be able to fit within a 5 ft square.
+      Core Augments:
+      (+1*): Increase the maximum size of the object by one 5 ft square.
+      (+2 ): Add stone, dirt, and clay to the list of materials that can be warped by this spell
+      (+4 ): Add metal to the list of materials that can be warped by this spell.
+      (+3 ): You can make precise and intentional changes to the targeted material as if sculpting it like clay. Particularly complex items may require a Crafting check to accurately sculpt.
+  
+  
       

@@ -5,9 +5,12 @@
     "check:common-buffs-compendium": "node scripts/admin/check-common-buffs.mjs",
     "sync:spell-compendium": "node scripts/admin/sync-spell-cores-augments.mjs",
     "check:spell-compendium": "node scripts/admin/check-spell-cores-augments.mjs",
+    "export:spell-wiki": "node scripts/admin/export-spell-wiki.mjs",
+    "sync:spell-wiki": "node scripts/admin/sync-spell-wiki.mjs",
     "sync:macro-compendiums": "node scripts/admin/sync-macro-compendiums.mjs",
     "check:macro-layout": "node scripts/admin/check-macro-layout.mjs",
     "prepare:macro-packs": "npm run sync:common-buffs-compendium && npm run check:common-buffs-compendium && npm run sync:spell-compendium && npm run check:spell-compendium && npm run sync:macro-compendiums && npm run check:macro-layout",
+    "deploy:release-targets": "node scripts/admin/release-deploy.mjs",
     "update:foundry-module": "node scripts/admin/update-foundry-module.mjs",
     "update:foundry-modules": "node scripts/admin/update-foundry-modules.mjs"
   },

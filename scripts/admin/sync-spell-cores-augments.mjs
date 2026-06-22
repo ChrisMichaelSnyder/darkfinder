@@ -2,11 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { ClassicLevel } from "classic-level";
+import {
+  ROOT,
+  normalizeText,
+  normalizeCompare,
+  buildSpellEntryRecords,
+} from "./spell-source-utils.mjs";
 
-const ROOT = process.cwd();
 const PACK_PATH = path.resolve(ROOT, "packs/spell-cores-augments");
-const CORE_SOURCE_PATH = path.resolve(ROOT, "data/spell-cores-augments/spell-cores.yaml");
-const AUGMENT_SOURCE_PATH = path.resolve(ROOT, "data/spell-cores-augments/spell-augments.yaml");
 const ITEM_KEY_PREFIX = "!items!";
 const FOLDER_KEY_PREFIX = "!folders!";
 
@@ -47,18 +50,6 @@ const SCHOOL_MAP = {
   universal: "uni",
 };
 
-function normalizeText(value) {
-  return String(value || "").trim();
-}
-
-function normalizeCompare(value) {
-  return normalizeText(value)
-    .replace(/[“”]/g, "\"")
-    .replace(/[‘’]/g, "'")
-    .replace(/\s+/g, " ")
-    .toLowerCase();
-}
-
 function escapeHtml(value) {
   return String(value)
     .replace(/&/g, "&amp;")
@@ -66,102 +57,6 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
-}
-
-function parseYamlEntries(filePath) {
-  const source = fs.readFileSync(filePath, "utf8").replace(/\r\n/g, "\n");
-  const lines = source.split("\n");
-  const entries = [];
-  let current = null;
-  let collectingText = false;
-
-  for (const line of lines) {
-    if (!line || line === "entries:") continue;
-
-    const entryStart = line.match(/^  - icon:\s+"(.*)"$/);
-    if (entryStart) {
-      if (current) entries.push(current);
-      current = { icon: entryStart[1], text: [] };
-      collectingText = false;
-      continue;
-    }
-
-    if (!current) continue;
-
-    if (/^    text:\s*\|\s*$/.test(line)) {
-      collectingText = true;
-      continue;
-    }
-
-    if (collectingText) {
-      current.text.push(line.startsWith("      ") ? line.slice(6) : line);
-    }
-  }
-
-  if (current) entries.push(current);
-  return entries.map((entry) => ({
-    icon: normalizeText(entry.icon),
-    text: entry.text.join("\n").trim(),
-  }));
-}
-
-function parseSpellText(text, expectedType) {
-  const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
-  const name = normalizeText(lines[0]);
-  if (!name) {
-    throw new Error("Encountered an entry with no name line.");
-  }
-
-  const fields = {};
-  let currentSection = null;
-  let sectionLines = [];
-
-  const flushSection = () => {
-    if (!currentSection) return;
-    fields[currentSection] = sectionLines.join("\n").trim();
-    currentSection = null;
-    sectionLines = [];
-  };
-
-  for (let index = 1; index < lines.length; index += 1) {
-    const line = lines[index];
-    const headerMatch = line.match(/^([A-Za-z /]+):\s*(.*)$/);
-    if (headerMatch) {
-      const label = normalizeText(headerMatch[1]);
-      const inlineValue = headerMatch[2] ?? "";
-      const isMultilineSection = ["Description", "Core Augments", "Spell Augments"].includes(label)
-        || (label === "Limitation" && inlineValue === "");
-      if (isMultilineSection) {
-        flushSection();
-        currentSection = label;
-        sectionLines = inlineValue ? [inlineValue] : [];
-        continue;
-      }
-      flushSection();
-      fields[label] = inlineValue.trim();
-      continue;
-    }
-
-    if (currentSection) sectionLines.push(line);
-  }
-
-  flushSection();
-
-  const typeValue = normalizeText(fields.Type);
-  if (!typeValue) {
-    throw new Error(`Entry "${name}" is missing a Type field.`);
-  }
-  if (expectedType && normalizeCompare(typeValue) !== normalizeCompare(expectedType)) {
-    throw new Error(`Entry "${name}" expected Type "${expectedType}" but found "${typeValue}".`);
-  }
-
-  return {
-    name,
-    type: typeValue,
-    spCost: normalizeText(fields["SP Cost"]),
-    school: normalizeText(fields.School),
-    text: String(text || "").trim(),
-  };
 }
 
 function buildDescriptionHtml(entry) {
@@ -326,20 +221,8 @@ async function rebuildPack(folder, folderDocuments, itemDocuments) {
   }
 }
 
-function buildEntryRecords() {
-  const coreEntries = parseYamlEntries(CORE_SOURCE_PATH).map((entry) => ({
-    ...parseSpellText(entry.text, "Core"),
-    icon: entry.icon,
-  }));
-  const augmentEntries = parseYamlEntries(AUGMENT_SOURCE_PATH).map((entry) => ({
-    ...parseSpellText(entry.text, "Augment"),
-    icon: entry.icon,
-  }));
-  return [...coreEntries, ...augmentEntries];
-}
-
 async function main() {
-  const sourceEntries = buildEntryRecords();
+  const sourceEntries = buildSpellEntryRecords().allEntries;
   const folderDocuments = COMPENDIUM_FOLDER_DEFINITIONS.map((folderDefinition, index) =>
     createFolderDocument(folderDefinition, index)
   );

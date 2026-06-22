@@ -200,7 +200,6 @@ entries:
       <p>Using this buff:</p>
       <ol>
         <li><strong>This buff does not account for weapon/armor/shield enhancement bonus since those are attached to items.</strong> You will still need to track those separately.</li>
-        <li>Set the item level of this buff equal to your character level.</li>
         <li>Set the first 6 attribute modifications to your stats from most important at the top to least important <strong>alternating between mental and physical stats.</strong></li>
         <li><a href="https://aonprd.com/Rules.aspx?ID=1950" target="_blank" rel="noopener noreferrer">Automatic Bonus Progression Rules</a></li>
       </ol>

@@ -5,3 +5,4 @@ test-results/
 *.jpg
 *.jpeg
 *.zip
+generated/

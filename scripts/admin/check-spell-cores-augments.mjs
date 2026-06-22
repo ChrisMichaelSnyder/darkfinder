@@ -2,10 +2,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ClassicLevel } from "classic-level";
+import {
+  ROOT,
+  SPELL_CORE_SOURCE_PATH as CORE_SOURCE_PATH,
+  SPELL_AUGMENT_SOURCE_PATH as AUGMENT_SOURCE_PATH,
+  normalizeText,
+  normalizeCompare,
+  parseYamlEntries,
+  deriveEntryType,
+} from "./spell-source-utils.mjs";
 
-const ROOT = process.cwd();
-const CORE_SOURCE_PATH = path.resolve(ROOT, "data/spell-cores-augments/spell-cores.yaml");
-const AUGMENT_SOURCE_PATH = path.resolve(ROOT, "data/spell-cores-augments/spell-augments.yaml");
 const PACK_PATH = path.resolve(ROOT, "packs/spell-cores-augments");
 const ITEM_KEY_PREFIX = "!items!";
 const FOLDER_KEY_PREFIX = "!folders!";
@@ -14,52 +20,8 @@ const EXPECTED_FOLDER_NAME_BY_TYPE = {
   augment: "Spell Augments",
 };
 
-function normalizeText(value) {
-  return String(value || "").trim();
-}
-
-function normalizeCompare(value) {
-  return normalizeText(value)
-    .replace(/[“”]/g, "\"")
-    .replace(/[‘’]/g, "'")
-    .replace(/\s+/g, " ")
-    .toLowerCase();
-}
-
 function normalizeEntryName(value) {
   return normalizeCompare(value).replace(/^\(augment\)\s*/i, "");
-}
-
-function parseYamlEntries(filePath) {
-  const source = fs.readFileSync(filePath, "utf8").replace(/\r\n/g, "\n");
-  const lines = source.split("\n");
-  const entries = [];
-  let current = null;
-  let collectingText = false;
-
-  for (const line of lines) {
-    if (!line || line === "entries:") continue;
-    const entryStart = line.match(/^  - icon:\s+"(.*)"$/);
-    if (entryStart) {
-      if (current) entries.push(current);
-      current = { icon: entryStart[1], text: [] };
-      collectingText = false;
-      continue;
-    }
-    if (!current) continue;
-    if (/^    text:\s*\|\s*$/.test(line)) {
-      collectingText = true;
-      continue;
-    }
-    if (collectingText) {
-      current.text.push(line.startsWith("      ") ? line.slice(6) : line);
-    }
-  }
-  if (current) entries.push(current);
-  return entries.map((entry) => ({
-    icon: normalizeText(entry.icon),
-    text: entry.text.join("\n").trim(),
-  }));
 }
 
 function parseSpellText(text) {
@@ -117,11 +79,6 @@ function fail(messages) {
     console.error(message);
   }
   process.exit(1);
-}
-
-function deriveEntryType(text) {
-  const match = String(text || "").match(/^\s*Type:\s*(.+)$/m);
-  return normalizeCompare(match?.[1] || "");
 }
 
 async function main() {

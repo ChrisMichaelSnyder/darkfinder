@@ -62,6 +62,9 @@ Suggested manifest entries:
 
 - Push the repo to GitHub.
 - Confirm `module.json` version and `download` URL match the release you are about to publish.
+- If Spell Cores or Spell Augments changed, the combined deploy workflow can publish the managed spell sections automatically before the Foundry server update:
+  - `npm run deploy:release-targets`
+  - Optional preview first: `npm run deploy:release-targets -- --dry-run-wiki true`
 
 ## 4. Create a release artifact
 
@@ -75,3 +78,4 @@ Suggested manifest entries:
 - In a separate Foundry install or clean test profile, install the module by manifest URL.
 - Enable it in a PF1 world.
 - Verify macro compendium and spell pack loading.
+- If using the combined deploy flow, verify both the wiki spell page and the hosted Foundry servers updated successfully.
