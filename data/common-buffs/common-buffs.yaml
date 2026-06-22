@@ -3,6 +3,7 @@ entries:
   #   icon: "icons/svg/dice-target.svg"
   #   description: |
   #     Example buff description.
+  #   active: true
   #   category: "Miscellaneous"
   #   hideFromToken: false
   #   limitedUses: "Unlimited"
@@ -203,26 +204,30 @@ entries:
         <li>Set the first 6 attribute modifications to your stats from most important at the top to least important <strong>alternating between mental and physical stats.</strong></li>
         <li><a href="https://aonprd.com/Rules.aspx?ID=1950" target="_blank" rel="noopener noreferrer">Automatic Bonus Progression Rules</a></li>
       </ol>
-      <table>
+      <table style="width: 100%; border-collapse: collapse; border: 1px solid rgba(60, 60, 60, 0.55);">
+        <colgroup>
+          <col style="width: 4.5rem;" />
+          <col />
+        </colgroup>
         <tbody>
-          <tr><td>1st</td><td>&mdash;</td></tr>
-          <tr><td>2nd</td><td>&mdash;</td></tr>
-          <tr><td>3rd</td><td>Resistance +1</td></tr>
-          <tr><td>4th</td><td>Armor attunement +1, weapon attunement +1</td></tr>
-          <tr><td>5th</td><td>Deflection +1</td></tr>
-          <tr><td>6th</td><td>Mental prowess +2</td></tr>
-          <tr><td>7th</td><td>Physical prowess +2</td></tr>
-          <tr><td>8th</td><td>Armor attunement +1/+1, resistance +2, toughening +1, weapon attunement +1/+1</td></tr>
-          <tr><td>9th</td><td>Armor attunement +2, weapon attunement +2</td></tr>
-          <tr><td>10th</td><td>Deflection +2, resistance +3</td></tr>
-          <tr><td>11th</td><td>Mental prowess +4</td></tr>
-          <tr><td>12th</td><td>Physical prowess +4</td></tr>
-          <tr><td>13th</td><td>Mental prowess +4/+2, physical prowess +4/+2, resistance +4, toughening +2</td></tr>
-          <tr><td>14th</td><td>Armor attunement +2/+2 or +3, resistance +5, weapon attunement +2/+2 or +3</td></tr>
-          <tr><td>15th</td><td>Armor attunement +3/+3 or +4, mental prowess +6/+2 or +4/+4, weapon attunement +3/+3 or +4</td></tr>
-          <tr><td>16th</td><td>Deflection +3, physical prowess +6/+2 or +4/+4, toughening +3</td></tr>
-          <tr><td>17th</td><td>Armor attunement +4/+3 or +5, deflection +4, mental prowess +6/+2/+2 or +4/+4/+2, physical prowess +6/+2/+2 or +4/+4/+2, toughening +4, weapon attunement +4/+3 or +5</td></tr>
-          <tr><td>18th</td><td>Deflection +5, mental prowess +6/+4/+2 or +4/+4/+4, physical prowess +6/+4/+2 or +4/+4/+4, toughening +5</td></tr>
+          <tr style="background: rgba(120, 120, 120, 0.18);"><td style="padding: 0.35rem 0.5rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center; font-weight: 600;">1st</td><td style="padding: 0.35rem 0.6rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center;">&mdash;</td></tr>
+          <tr style="background: rgba(255, 255, 255, 0.42);"><td style="padding: 0.35rem 0.5rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center; font-weight: 600;">2nd</td><td style="padding: 0.35rem 0.6rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center;">&mdash;</td></tr>
+          <tr style="background: rgba(120, 120, 120, 0.18);"><td style="padding: 0.35rem 0.5rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center; font-weight: 600;">3rd</td><td style="padding: 0.35rem 0.6rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center;">Resistance +1</td></tr>
+          <tr style="background: rgba(255, 255, 255, 0.42);"><td style="padding: 0.35rem 0.5rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center; font-weight: 600;">4th</td><td style="padding: 0.35rem 0.6rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center;">Armor attunement +1, weapon attunement +1</td></tr>
+          <tr style="background: rgba(120, 120, 120, 0.18);"><td style="padding: 0.35rem 0.5rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center; font-weight: 600;">5th</td><td style="padding: 0.35rem 0.6rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center;">Deflection +1</td></tr>
+          <tr style="background: rgba(255, 255, 255, 0.42);"><td style="padding: 0.35rem 0.5rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center; font-weight: 600;">6th</td><td style="padding: 0.35rem 0.6rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center;">Mental prowess +2</td></tr>
+          <tr style="background: rgba(120, 120, 120, 0.18);"><td style="padding: 0.35rem 0.5rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center; font-weight: 600;">7th</td><td style="padding: 0.35rem 0.6rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center;">Physical prowess +2</td></tr>
+          <tr style="background: rgba(255, 255, 255, 0.42);"><td style="padding: 0.35rem 0.5rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center; font-weight: 600;">8th</td><td style="padding: 0.35rem 0.6rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center;">Armor attunement +1/+1, resistance +2, toughening +1, weapon attunement +1/+1</td></tr>
+          <tr style="background: rgba(120, 120, 120, 0.18);"><td style="padding: 0.35rem 0.5rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center; font-weight: 600;">9th</td><td style="padding: 0.35rem 0.6rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center;">Armor attunement +2, weapon attunement +2</td></tr>
+          <tr style="background: rgba(255, 255, 255, 0.42);"><td style="padding: 0.35rem 0.5rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center; font-weight: 600;">10th</td><td style="padding: 0.35rem 0.6rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center;">Deflection +2, resistance +3</td></tr>
+          <tr style="background: rgba(120, 120, 120, 0.18);"><td style="padding: 0.35rem 0.5rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center; font-weight: 600;">11th</td><td style="padding: 0.35rem 0.6rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center;">Mental prowess +4</td></tr>
+          <tr style="background: rgba(255, 255, 255, 0.42);"><td style="padding: 0.35rem 0.5rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center; font-weight: 600;">12th</td><td style="padding: 0.35rem 0.6rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center;">Physical prowess +4</td></tr>
+          <tr style="background: rgba(120, 120, 120, 0.18);"><td style="padding: 0.35rem 0.5rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center; font-weight: 600;">13th</td><td style="padding: 0.35rem 0.6rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center;">Mental prowess +4/+2, physical prowess +4/+2, resistance +4, toughening +2</td></tr>
+          <tr style="background: rgba(255, 255, 255, 0.42);"><td style="padding: 0.35rem 0.5rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center; font-weight: 600;">14th</td><td style="padding: 0.35rem 0.6rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center;">Armor attunement +2/+2 or +3, resistance +5, weapon attunement +2/+2 or +3</td></tr>
+          <tr style="background: rgba(120, 120, 120, 0.18);"><td style="padding: 0.35rem 0.5rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center; font-weight: 600;">15th</td><td style="padding: 0.35rem 0.6rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center;">Armor attunement +3/+3 or +4, mental prowess +6/+2 or +4/+4, weapon attunement +3/+3 or +4</td></tr>
+          <tr style="background: rgba(255, 255, 255, 0.42);"><td style="padding: 0.35rem 0.5rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center; font-weight: 600;">16th</td><td style="padding: 0.35rem 0.6rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center;">Deflection +3, physical prowess +6/+2 or +4/+4, toughening +3</td></tr>
+          <tr style="background: rgba(120, 120, 120, 0.18);"><td style="padding: 0.35rem 0.5rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center; font-weight: 600;">17th</td><td style="padding: 0.35rem 0.6rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center;">Armor attunement +4/+3 or +5, deflection +4, mental prowess +6/+2/+2 or +4/+4/+2, physical prowess +6/+2/+2 or +4/+4/+2, toughening +4, weapon attunement +4/+3 or +5</td></tr>
+          <tr style="background: rgba(255, 255, 255, 0.42);"><td style="padding: 0.35rem 0.5rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center; font-weight: 600;">18th</td><td style="padding: 0.35rem 0.6rem; border: 1px solid rgba(60, 60, 60, 0.45); text-align: center;">Deflection +5, mental prowess +6/+4/+2 or +4/+4/+4, physical prowess +6/+4/+2 or +4/+4/+4, toughening +5</td></tr>
         </tbody>
       </table>
     category: "Permanent"

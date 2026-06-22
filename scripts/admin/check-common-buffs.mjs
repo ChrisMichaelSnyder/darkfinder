@@ -87,6 +87,7 @@ function parseCharacterBuffEntries(filePath) {
       name: normalizeText(current.name),
       icon: normalizeText(current.icon),
       description: current.description.join("\n").trim(),
+      active: parseBoolean(current.active, true),
       category: normalizeText(current.category),
       hideFromToken: parseBoolean(current.hideFromToken, false),
       limitedUses: normalizeText(current.limitedUses),
@@ -113,6 +114,7 @@ function parseCharacterBuffEntries(filePath) {
         name: "",
         icon: "",
         description: [],
+        active: "true",
         category: "Miscellaneous",
         hideFromToken: "false",
         limitedUses: "Unlimited",
@@ -281,6 +283,10 @@ async function main() {
 
     if (String(doc.img || "").trim() !== entry.icon) {
       errors.push(`Common Buff icon for "${entry.name}" is out of sync.`);
+    }
+
+    if (Boolean(doc.system?.active) !== Boolean(entry.active)) {
+      errors.push(`Common Buff active flag for "${entry.name}" is out of sync.`);
     }
 
     const expectedDescriptionHtml = buildDescriptionHtml(entry.description);
