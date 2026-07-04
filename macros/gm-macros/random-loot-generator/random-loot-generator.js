@@ -11,6 +11,7 @@
   const AUDIT_DIALOG_HEIGHT = 700;
   const MAX_REROLL_ITEMS = 8;
   const TARGET_TOLERANCE = 0.1;
+  const CAP_RARITY_WEIGHT_STRENGTH = 1.5;
   const TARGET_PACK_NAMES = [
     "gear/wonderous",
     "gear/wondrous",
@@ -118,7 +119,7 @@
           minHeight: `${DIALOG_HEIGHT}px`,
           maxHeight: `${DIALOG_HEIGHT}px`,
         });
-        dialogWindow.addClass("darkfinder-random-loot-dialog");
+        dialogWindow.addClass("darkfinder-random-loot-dialog darkfinder-random-loot-generator-dialog");
 
         dialogContent.css({
           width: "100%",
@@ -454,7 +455,9 @@
 
       const affordableCandidates = remainingCandidates.filter((candidate) => candidate.price <= Math.max(0, maximumTarget - totalValue));
       const choicePool = affordableCandidates.length ? affordableCandidates : remainingCandidates;
-      const selectedCandidate = chooseWeightedRandomCandidate(choicePool, targetBudget - totalValue);
+      const selectedCandidate = chooseWeightedRandomCandidate(choicePool, targetBudget - totalValue, {
+        maxSingleItemValue,
+      });
       if (!selectedCandidate) break;
 
       selectedItems.push(selectedCandidate);
@@ -510,6 +513,7 @@
 
     const rerolled = buildItemBundleForTarget(itemToReplace.price, candidateItems, {
       maxItems: MAX_REROLL_ITEMS,
+      maxSingleItemValue,
       rerolledItemCounts: state.rerolledItemCounts,
     });
 
@@ -978,6 +982,7 @@
       const affordableCandidates = remainingCandidates.filter((candidate) => candidate.price <= Math.max(0, maximumTarget - totalValue));
       const choicePool = affordableCandidates.length ? affordableCandidates : remainingCandidates;
       const selectedCandidate = chooseWeightedRandomCandidate(choicePool, targetBudget - totalValue, {
+        maxSingleItemValue: options.maxSingleItemValue,
         rerolledItemCounts: options.rerolledItemCounts,
       });
       if (!selectedCandidate) break;
@@ -2566,11 +2571,12 @@
     const weightedEntries = safeCandidates.map((candidate) => {
       const delta = Math.abs((Number(remainingBudget) || 0) - candidate.price);
       const score = 1 / (1 + delta);
+      const rarityPenalty = computeSingleItemCapRarityPenalty(candidate.price, options.maxSingleItemValue);
       const rerollCount = getRememberedRerollCount(options.rerolledItemCounts, candidate.uuid);
       const rerollPenalty = rerollCount > 0 ? Math.pow(0.15, rerollCount) : 1;
       return {
         candidate,
-        weight: Math.max(score * rerollPenalty, 0.0001),
+        weight: Math.max(score * rarityPenalty * rerollPenalty, 0.0001),
       };
     });
 
@@ -2585,6 +2591,15 @@
     return weightedEntries[weightedEntries.length - 1]?.candidate || null;
   }
 
+  function computeSingleItemCapRarityPenalty(itemPrice, maxSingleItemValue) {
+    const safeCap = Number(maxSingleItemValue) || 0;
+    const safePrice = Math.max(0, Number(itemPrice) || 0);
+    if (!(safeCap > 0) || safePrice <= 0) return 1;
+
+    const ratio = clampNumber(safePrice / safeCap, 0, 1);
+    return 1 / (1 + (ratio * CAP_RARITY_WEIGHT_STRENGTH));
+  }
+
   function clampInteger(value, min, max) {
     const numeric = Math.floor(Number(value) || 0);
     return Math.min(max, Math.max(min, numeric));
@@ -2593,6 +2608,11 @@
   function clampMinInteger(value, min) {
     const numeric = Math.floor(Number(value) || 0);
     return Math.max(min, numeric);
+  }
+
+  function clampNumber(value, min, max) {
+    const numeric = Number(value) || 0;
+    return Math.min(max, Math.max(min, numeric));
   }
 
   function formatGold(value) {

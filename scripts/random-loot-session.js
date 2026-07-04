@@ -7,6 +7,7 @@ const PLAYER_DIALOG_HEIGHT = 760;
 const GM_DIALOG_WIDTH = 760;
 const GM_DIALOG_HEIGHT = 760;
 const RESPONSE_FLAG_KEY = "randomLootSessionResponse";
+const RESULTS_DISMISS_FLAG_KEY = "randomLootResultsDismissedSessionId";
 const FORCE_SUBMIT_WARNING = "Forcing done will lock in every player's currently claimed items whether they are ready or not. Are you sure you want to do that?";
 
 const lootSessionState = {
@@ -629,6 +630,10 @@ async function openOrRefreshLootResultsDialog(sessionId, fallbackSession = null)
   const session = resolveSessionForClient(sessionId, fallbackSession);
   if (!session?.id || session.id !== sessionId || session.status !== "resolved") return;
   if (!sessionAppliesToCurrentUser(session)) return;
+  if (isLootResultsDismissedForCurrentUser(sessionId)) return;
+  if (game.user?.isGM) {
+    closeRandomLootGeneratorDialogs();
+  }
 
   const existing = lootSessionState.resultsDialogStateBySessionId.get(sessionId);
   if (existing?.dialog?.rendered) {
@@ -642,6 +647,7 @@ async function openOrRefreshLootResultsDialog(sessionId, fallbackSession = null)
     session,
     eventRoot: null,
     dialog: null,
+    suppressDismissOnClose: false,
   };
 
   const dialog = new Dialog({
@@ -711,6 +717,9 @@ async function openOrRefreshLootResultsDialog(sessionId, fallbackSession = null)
       if (current?.dialog === dialog) {
         lootSessionState.resultsDialogStateBySessionId.delete(sessionId);
       }
+      if (!dialogState.suppressDismissOnClose) {
+        void markLootResultsDismissedForCurrentUser(sessionId);
+      }
     },
   });
 
@@ -723,7 +732,21 @@ function closeLootResultsDialog(sessionId) {
   const state = lootSessionState.resultsDialogStateBySessionId.get(sessionId);
   if (!state?.dialog) return;
   lootSessionState.resultsDialogStateBySessionId.delete(sessionId);
+  state.suppressDismissOnClose = true;
   state.dialog.close();
+}
+
+function closeRandomLootGeneratorDialogs() {
+  for (const app of Object.values(ui.windows || {})) {
+    const element = app?.element;
+    const hasGeneratorClass = !!element?.hasClass?.("darkfinder-random-loot-generator-dialog");
+    if (!hasGeneratorClass) continue;
+    try {
+      app.close();
+    } catch (error) {
+      console.warn("Darkfinder loot session could not close the GM loot generator dialog.", error);
+    }
+  }
 }
 
 async function syncLootSessionUiFromSetting(session) {
@@ -752,6 +775,7 @@ async function syncLootSessionUiFromSetting(session) {
 
   if (normalizedSession.status === "resolved") {
     closeLootSessionDialog(sessionId);
+    if (isLootResultsDismissedForCurrentUser(sessionId)) return;
     await openOrRefreshLootResultsDialog(sessionId, normalizedSession);
     return;
   }
@@ -1788,6 +1812,20 @@ function getWaitingParticipantDisplayNames(session) {
 function getLootSessionResponse(user = game.user) {
   const response = user?.getFlag?.(MODULE_ID, RESPONSE_FLAG_KEY);
   return response && typeof response === "object" ? response : {};
+}
+
+function getLootResultsDismissedSessionId(user = game.user) {
+  return String(user?.getFlag?.(MODULE_ID, RESULTS_DISMISS_FLAG_KEY) || "").trim();
+}
+
+function isLootResultsDismissedForCurrentUser(sessionId) {
+  return getLootResultsDismissedSessionId(game.user) === String(sessionId || "").trim();
+}
+
+async function markLootResultsDismissedForCurrentUser(sessionId) {
+  const normalizedSessionId = String(sessionId || "").trim();
+  if (!normalizedSessionId || !game.user) return;
+  await game.user.setFlag(MODULE_ID, RESULTS_DISMISS_FLAG_KEY, normalizedSessionId);
 }
 
 function getNormalizedLootSessionResponse(user = game.user, sessionId = "") {
