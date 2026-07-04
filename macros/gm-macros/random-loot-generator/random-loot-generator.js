@@ -747,7 +747,7 @@
 
     eventRoot.off("click", "[data-action='submit-player-loot']").on("click", "[data-action='submit-player-loot']", (event) => {
       event.preventDefault();
-      ui.notifications.info("Submit is not wired up yet.");
+      ui.notifications.info("Done is not wired up yet.");
     });
   }
 
@@ -1028,7 +1028,7 @@
     );
     const totalGold = Math.round(amountToNextWbl * characterCount * (percentOfWbl / 100));
     const perPlayerShare = characterCount > 0 ? Math.round(totalGold / characterCount) : 0;
-    const maxSingleItemValue = Math.floor(amountToNextWbl / 2);
+    const maxSingleItemValue = Math.floor(amountToNextWbl);
 
     return {
       partyLevel,
@@ -1578,7 +1578,7 @@
           align-items: center;
           gap: 0.9rem;
           width: 100%;
-          min-height: 4.25rem;
+          min-height: 4.85rem;
           padding: 0.7rem 0.8rem;
           border: 1px solid rgba(143, 134, 115, 0.95);
           border-radius: 12px;
@@ -1603,14 +1603,14 @@
         .darkfinder-random-loot-item-main {
           display: flex;
           align-items: center;
-          gap: 0.75rem;
+          gap: 0.9rem;
           min-width: 0;
-          min-height: 2.2rem;
+          min-height: 2.8rem;
         }
         .darkfinder-random-loot-item-icon {
-          width: 2rem;
-          height: 2rem;
-          flex: 0 0 2rem;
+          width: 2.65rem;
+          height: 2.65rem;
+          flex: 0 0 2.65rem;
           border-radius: 7px;
           object-fit: cover;
           border: 1px solid rgba(105, 89, 64, 0.35);
@@ -1619,6 +1619,7 @@
         .darkfinder-random-loot-item-name {
           min-width: 0;
           font-weight: 800;
+          font-size: 1rem;
           color: #2b2218;
           white-space: nowrap;
           overflow: hidden;
@@ -1993,7 +1994,7 @@
           align-items: center;
           gap: 0.9rem;
           width: 100%;
-          min-height: 4.25rem;
+          min-height: 4.85rem;
           padding: 0.7rem 0.8rem;
           border: 1px solid rgba(143, 134, 115, 0.95);
           border-radius: 12px;
@@ -2018,14 +2019,14 @@
         .darkfinder-random-loot-player .darkfinder-random-loot-item-main {
           display: flex;
           align-items: center;
-          gap: 0.75rem;
+          gap: 0.9rem;
           min-width: 0;
-          min-height: 2.2rem;
+          min-height: 2.8rem;
         }
         .darkfinder-random-loot-player .darkfinder-random-loot-item-icon {
-          width: 2rem;
-          height: 2rem;
-          flex: 0 0 2rem;
+          width: 2.65rem;
+          height: 2.65rem;
+          flex: 0 0 2.65rem;
           border-radius: 7px;
           object-fit: cover;
           border: 1px solid rgba(105, 89, 64, 0.35);
@@ -2034,6 +2035,7 @@
         .darkfinder-random-loot-player .darkfinder-random-loot-item-name {
           min-width: 0;
           font-weight: 800;
+          font-size: 1rem;
           color: #2b2218;
           white-space: nowrap;
           overflow: hidden;
@@ -2164,7 +2166,7 @@
           </div>
         </div>
         <div class="darkfinder-random-loot-actions">
-          <button type="button" class="darkfinder-random-loot-button darkfinder-random-loot-button-primary" data-action="submit-player-loot">Submit</button>
+          <button type="button" class="darkfinder-random-loot-button darkfinder-random-loot-button-primary" data-action="submit-player-loot">Done</button>
         </div>
         <div class="darkfinder-random-loot-tooltip" data-role="item-tooltip"></div>
       </div>

@@ -7,7 +7,7 @@ const PLAYER_DIALOG_HEIGHT = 760;
 const GM_DIALOG_WIDTH = 760;
 const GM_DIALOG_HEIGHT = 760;
 const RESPONSE_FLAG_KEY = "randomLootSessionResponse";
-const FORCE_SUBMIT_WARNING = "Forcing submissions will lock in every players currently claimed items whether they are ready or not. Are you sure you want to do that?";
+const FORCE_SUBMIT_WARNING = "Forcing done will lock in every player's currently claimed items whether they are ready or not. Are you sure you want to do that?";
 
 const lootSessionState = {
   dialogStateBySessionId: new Map(),
@@ -918,12 +918,15 @@ function renderLootSessionDialogState(eventRoot, dialogState) {
 
   const submitButton = eventRoot.find("[data-action='submit-player-loot']").first();
   submitButton.prop("disabled", isLocked);
-  submitButton.text(currentUserSubmitted ? "Submitted" : "Submit");
+  submitButton.text("Done");
 
   const cancelButton = eventRoot.find("[data-action='cancel-player-loot-session']").first();
   const forceButton = eventRoot.find("[data-action='force-submit-player-loot-session']").first();
   cancelButton.prop("disabled", latestSession.status !== "collecting");
   forceButton.prop("disabled", latestSession.status !== "collecting");
+  const waitingNames = getWaitingParticipantDisplayNames(latestSession);
+  forceButton.text(`Force Done: ${waitingNames.length}`);
+  forceButton.attr("title", waitingNames.length ? waitingNames.join("\n") : "Every player is done.");
 }
 
 function buildLootResultsDialogContent() {
@@ -1041,7 +1044,7 @@ function buildLootResultsDialogContent() {
         align-items: center;
         gap: 0.9rem;
         width: 100%;
-        min-height: 3.6rem;
+        min-height: 4.35rem;
         padding: 0.65rem 0.75rem;
         border: 1px solid rgba(143, 134, 115, 0.95);
         border-radius: 12px;
@@ -1053,13 +1056,13 @@ function buildLootResultsDialogContent() {
       .darkfinder-random-loot-results-dialog .darkfinder-random-loot-item-main {
         display: flex;
         align-items: center;
-        gap: 0.75rem;
+        gap: 0.9rem;
         min-width: 0;
       }
       .darkfinder-random-loot-results-dialog .darkfinder-random-loot-item-icon {
-        width: 2rem;
-        height: 2rem;
-        flex: 0 0 2rem;
+        width: 2.65rem;
+        height: 2.65rem;
+        flex: 0 0 2.65rem;
         border-radius: 7px;
         object-fit: cover;
         border: 1px solid rgba(105, 89, 64, 0.35);
@@ -1068,6 +1071,7 @@ function buildLootResultsDialogContent() {
       .darkfinder-random-loot-results-dialog .darkfinder-random-loot-item-name {
         min-width: 0;
         font-weight: 800;
+        font-size: 1rem;
         color: #2b2218;
       }
       .darkfinder-random-loot-results-dialog .darkfinder-random-loot-item-price {
@@ -1367,7 +1371,7 @@ function buildLootSessionDialogContent(role) {
         align-items: center;
         gap: 0.9rem;
         width: 100%;
-        min-height: 4.25rem;
+        min-height: 4.85rem;
         padding: 0.7rem 0.8rem;
         border: 1px solid rgba(143, 134, 115, 0.95);
         border-radius: 12px;
@@ -1392,14 +1396,14 @@ function buildLootSessionDialogContent(role) {
       .darkfinder-random-loot-player .darkfinder-random-loot-item-main {
         display: flex;
         align-items: center;
-        gap: 0.75rem;
+        gap: 0.9rem;
         min-width: 0;
-        min-height: 2.2rem;
+        min-height: 2.8rem;
       }
       .darkfinder-random-loot-player .darkfinder-random-loot-item-icon {
-        width: 2rem;
-        height: 2rem;
-        flex: 0 0 2rem;
+        width: 2.65rem;
+        height: 2.65rem;
+        flex: 0 0 2.65rem;
         border-radius: 7px;
         object-fit: cover;
         border: 1px solid rgba(105, 89, 64, 0.35);
@@ -1408,6 +1412,7 @@ function buildLootSessionDialogContent(role) {
       .darkfinder-random-loot-player .darkfinder-random-loot-item-name {
         min-width: 0;
         font-weight: 800;
+        font-size: 1rem;
         color: #2b2218;
         white-space: nowrap;
         overflow: hidden;
@@ -1586,9 +1591,9 @@ function buildLootSessionDialogContent(role) {
       <div class="darkfinder-random-loot-actions${isGm ? " darkfinder-random-loot-actions-gm" : ""}">
         ${isGm ? `
           <button type="button" class="darkfinder-random-loot-button" data-action="cancel-player-loot-session">Cancel</button>
-          <button type="button" class="darkfinder-random-loot-button darkfinder-random-loot-button-danger" data-action="force-submit-player-loot-session">Force Submit</button>
+          <button type="button" class="darkfinder-random-loot-button darkfinder-random-loot-button-danger" data-action="force-submit-player-loot-session">Force Done: 0</button>
         ` : `
-          <button type="button" class="darkfinder-random-loot-button darkfinder-random-loot-button-primary" data-action="submit-player-loot">Submit</button>
+          <button type="button" class="darkfinder-random-loot-button darkfinder-random-loot-button-primary" data-action="submit-player-loot">Done</button>
         `}
       </div>
       <div class="darkfinder-random-loot-tooltip" data-role="item-tooltip"></div>
@@ -1603,9 +1608,7 @@ function buildLootSessionItemsHtml(session, role) {
 
   return session.items.map((item) => {
     const claimantIds = Array.isArray(session.claimsByItemUuid?.[item.uuid]) ? session.claimsByItemUuid[item.uuid] : [];
-    const submittedUserIds = new Set(session.submittedUserIds || []);
     const claimantUsers = claimantIds
-      .filter((userId) => submittedUserIds.has(userId))
       .map((userId) => game.users.get(userId))
       .filter(Boolean);
     const checked = role === "gm"
@@ -1675,7 +1678,7 @@ function buildClaimPieChartHtml(claimantUsers) {
 
 function buildSessionStatusText(session, role) {
   if (session.status === "resolving") {
-    return "All submissions are in. Resolving contested items now...";
+    return "Everyone is done. Resolving contested items now...";
   }
   if (session.status === "resolved") {
     return "Loot claims have been resolved.";
@@ -1684,26 +1687,22 @@ function buildSessionStatusText(session, role) {
     return "This loot claim session was cancelled.";
   }
 
-  const participantIds = getRequiredParticipantUserIds(session);
-  const submittedIds = new Set(session.submittedUserIds || []);
-  const waitingNames = participantIds
-    .filter((userId) => !submittedIds.has(userId))
-    .map((userId) => String(game.users.get(userId)?.character?.name || game.users.get(userId)?.name || "Unknown"));
+  const waitingNames = getWaitingParticipantDisplayNames(session);
 
   if (role === "gm") {
-    if (!waitingNames.length) return "Every player is submitted. Finalizing now...";
+    if (!waitingNames.length) return "Every player is done. Finalizing now...";
     return `Waiting on: ${waitingNames.join(", ")}`;
   }
 
-  const submittedText = submittedIds.has(game.user.id)
+  const submittedText = isCurrentUserSubmittedForSession(session)
     ? "Your choices are locked in."
-    : "Choose any items you want to claim, then submit when you are ready.";
+    : "Choose any items you want to claim, then press Done when you are ready.";
   return waitingNames.length ? `${submittedText} Waiting on ${waitingNames.length} player(s).` : submittedText;
 }
 
 function openForceSubmitConfirmation(sessionId) {
   new Dialog({
-    title: "Force Submit?",
+    title: "Force Done?",
     content: `<p>${escapeHtml(FORCE_SUBMIT_WARNING)}</p>`,
     buttons: {
       cancel: {
@@ -1774,6 +1773,18 @@ function getRequiredParticipantUserIds(session) {
   return activeParticipantIds.length ? activeParticipantIds : participantIds;
 }
 
+function getAllParticipantUserIds(session) {
+  return [...(session?.participantUserIds || [])].map((userId) => String(userId || "").trim()).filter(Boolean);
+}
+
+function getWaitingParticipantDisplayNames(session) {
+  const participantIds = getRequiredParticipantUserIds(session);
+  const submittedIds = new Set(session?.submittedUserIds || []);
+  return participantIds
+    .filter((userId) => !submittedIds.has(userId))
+    .map((userId) => String(game.users.get(userId)?.character?.name || game.users.get(userId)?.name || "Unknown"));
+}
+
 function getLootSessionResponse(user = game.user) {
   const response = user?.getFlag?.(MODULE_ID, RESPONSE_FLAG_KEY);
   return response && typeof response === "object" ? response : {};
@@ -1827,11 +1838,13 @@ function buildSessionResponseState(session) {
   const itemUuids = new Set((session?.items || []).map((item) => String(item?.uuid || "").trim()).filter(Boolean));
   const claimsByItemUuid = {};
   const submittedUserIds = [];
+  const sessionSubmittedUserIds = new Set(session?.submittedUserIds || []);
 
-  for (const userId of getRequiredParticipantUserIds(session)) {
+  for (const userId of getAllParticipantUserIds(session)) {
     const user = game.users.get(userId);
     const response = getNormalizedLootSessionResponse(user, session.id);
-    if (response.submitted) {
+    const shouldTreatAsSubmitted = response.submitted || sessionSubmittedUserIds.has(userId) || !user?.active;
+    if (shouldTreatAsSubmitted) {
       submittedUserIds.push(userId);
     }
     for (const itemUuid of response.claimedItemUuids || []) {
