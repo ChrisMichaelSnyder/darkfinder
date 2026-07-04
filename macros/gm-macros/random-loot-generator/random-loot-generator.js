@@ -3204,6 +3204,25 @@
     };
   }
 
+  function resolveSpellConsumableHelperTarget(spellDocument) {
+    const helperCandidates = [
+      {
+        owner: globalThis.pf1?.models?.item?.SpellModel,
+        fn: globalThis.pf1?.models?.item?.SpellModel?.toConsumable,
+      },
+      {
+        owner: spellDocument?.constructor,
+        fn: spellDocument?.constructor?.toConsumable,
+      },
+      {
+        owner: globalThis.ItemSpellPF,
+        fn: globalThis.ItemSpellPF?.toConsumable,
+      },
+    ];
+
+    return helperCandidates.find((candidate) => typeof candidate?.fn === "function") || null;
+  }
+
   function getSpellMinimumLevelAndCasterLevel(modelTarget, spellData) {
     const result = modelTarget?.getMinCLFromData?.call(modelTarget.owner, spellData);
     if (Array.isArray(result) && result.length >= 2) {
@@ -3412,13 +3431,16 @@
 
     const uses = Math.max(1, Number(option?.uses) || 1);
     const spellDocument = await fromUuid(spellUuid);
-    const modelTarget = resolveSpellConsumableModelTarget(spellDocument);
-    if (!spellDocument || !modelTarget) return null;
+    const helperTarget = resolveSpellConsumableHelperTarget(spellDocument);
+    if (!spellDocument || !helperTarget) return null;
+    const spellType = String(option?.spellType || "arcane");
+    const spellLevel = Number(option?.spellLevel) || 0;
+    const casterLevel = Math.max(1, Number(option?.casterLevel) || 1);
 
-    const itemData = await modelTarget.toConsumable.call(modelTarget.owner, spellDocument, bucketCandidate.consumableType, {
-      spellType: String(option?.spellType || "arcane"),
-      sl: Number(option?.spellLevel) || 0,
-      cl: Math.max(1, Number(option?.casterLevel) || 1),
+    const itemData = await helperTarget.fn.call(helperTarget.owner, spellDocument, bucketCandidate.consumableType, {
+      spellType,
+      sl: spellLevel,
+      cl: casterLevel,
       uses,
       identified: true,
     });
