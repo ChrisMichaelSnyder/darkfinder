@@ -36,6 +36,12 @@
     5: 0.32,
   };
   const CATEGORY_COUNT_NORMALIZATION_POWER = 1;
+  const CONSUMABLE_CRACK_FILL_THRESHOLD = 0.55;
+  const CONSUMABLE_CRACK_FILL_BOOST = 4.2;
+  const CONSUMABLE_FIRST_SHOWUP_BOOST = 2.4;
+  const CONSUMABLE_OVERFLOW_DAMPING = 0.42;
+  const HEALING_POTION_NAME_WEIGHT = 1.5;
+  const HEALING_SCROLL_WAND_NAME_WEIGHT = 1.2;
   const CONSUMABLE_REPEAT_DAMPING = 0.93;
   const SAME_CONSUMABLE_TYPE_DAMPING = 0.86;
   const SAME_CONSUMABLE_SPELL_DAMPING = 0.38;
@@ -532,6 +538,7 @@
       const choicePool = affordableCandidates.length ? affordableCandidates : remainingCandidates;
       const selectedCandidate = chooseWeightedRandomCandidate(choicePool, targetBudget - totalValue, {
         maxSingleItemValue,
+        maximumBudget: maximumTarget,
         selectedItems,
       });
       if (!selectedCandidate) break;
@@ -577,12 +584,15 @@
   }
 
   async function rerollGeneratedItem(itemToReplace, state, wealthByLevel) {
+    const settings = buildGeneratedLootSettings(state, wealthByLevel);
+    const rerollRange = buildReplacementBudgetRange(itemToReplace, state.generatedItems, settings.totalGold);
+
     if (normalizeText(itemToReplace?.sourceType) === "coinsgemsart") {
-      const rerolledCurrency = createCurrencyLootItemFromBudget(getItemTotalPrice(itemToReplace), { preserveTotal: true });
+      const rerolledCurrencyBudget = chooseReplacementBudgetTarget(rerollRange, getItemTotalPrice(itemToReplace));
+      const rerolledCurrency = createCurrencyLootItemFromBudget(rerolledCurrencyBudget, { preserveTotal: true });
       return rerolledCurrency ? [rerolledCurrency] : [];
     }
 
-    const settings = buildGeneratedLootSettings(state, wealthByLevel);
     const maxSingleItemValue = settings.maxSingleItemValue;
     const packs = resolveLootCompendiumPacks();
     const availableReplacementSlots = Math.max(1, settings.maxItems - Math.max(0, state.generatedItems.length - 1));
@@ -597,9 +607,12 @@
       throw new Error("No eligible replacement items were available for this reroll.");
     }
 
-    const rerolled = await buildItemBundleForTarget(getItemTotalPrice(itemToReplace), candidateItems, {
+    const rerollTargetBudget = chooseReplacementBudgetTarget(rerollRange, getItemTotalPrice(itemToReplace));
+    const rerolled = await buildItemBundleForTarget(rerollTargetBudget, candidateItems, {
       maxItems: Math.min(MAX_REROLL_ITEMS, availableReplacementSlots),
       maxSingleItemValue,
+      minimumTotal: rerollRange.minimumTotal,
+      maximumTotal: rerollRange.maximumTotal,
       rerolledItemCounts: state.rerolledItemCounts,
     });
 
@@ -1081,8 +1094,12 @@
 
   async function buildItemBundleForTarget(targetBudget, candidates, options = {}) {
     const maxItems = clampMinInteger(options.maxItems || 1, 1);
-    const minimumTarget = Math.floor(targetBudget * (1 - TARGET_TOLERANCE));
-    const maximumTarget = Math.ceil(targetBudget * (1 + TARGET_TOLERANCE));
+    const minimumTarget = Math.max(0, Number.isFinite(Number(options.minimumTotal))
+      ? Number(options.minimumTotal)
+      : Math.floor(targetBudget * (1 - TARGET_TOLERANCE)));
+    const maximumTarget = Math.max(minimumTarget, Number.isFinite(Number(options.maximumTotal))
+      ? Number(options.maximumTotal)
+      : Math.ceil(targetBudget * (1 + TARGET_TOLERANCE)));
     const remainingCandidates = [...(candidates || [])];
     const selectedItems = [];
     let totalValue = 0;
@@ -1095,6 +1112,7 @@
       const selectedCandidate = chooseWeightedRandomCandidate(choicePool, targetBudget - totalValue, {
         selectedItems,
         maxSingleItemValue: options.maxSingleItemValue,
+        maximumBudget: maximumTarget,
         rerolledItemCounts: options.rerolledItemCounts,
       });
       if (!selectedCandidate) break;
@@ -3156,7 +3174,10 @@
       const rerollCount = getRememberedRerollCount(options.rerolledItemCounts, candidate.uuid);
       const rerollPenalty = rerollCount > 0 ? Math.pow(0.15, rerollCount) : 1;
       const categoryWeight = getCandidateCategoryWeight(candidate, categoryCounts);
-      const repeatPenalty = getCandidateRepeatPenalty(candidate, options.selectedItems);
+      const repeatPenalty = getCandidateRepeatPenalty(candidate, options.selectedItems, {
+        remainingBudget,
+        maximumBudget: options.maximumBudget,
+      });
       return {
         candidate,
         weight: Math.max(score * rarityPenalty * rerollPenalty * categoryWeight * repeatPenalty, 0.0001),
@@ -3202,12 +3223,30 @@
     return Math.max(weight, 0.0001);
   }
 
-  function getCandidateRepeatPenalty(candidate, selectedItems = []) {
+  function getCandidateRepeatPenalty(candidate, selectedItems = [], options = {}) {
     const consumableSelections = (selectedItems || []).filter((item) => isSpellConsumableCandidate(item));
-    if (!consumableSelections.length) return 1;
-
     const sourceType = normalizeText(candidate?.sourceType || "");
-    if (!sourceType || sourceType === "permanent") return 1;
+    const isConsumableCandidate = isConsumableSourceType(sourceType);
+    const remainingBudget = Math.max(0, Number(options.remainingBudget) || 0);
+    const maximumBudget = Math.max(0, Number(options.maximumBudget) || 0);
+    const crackFillThreshold = maximumBudget > 0
+      ? maximumBudget * CONSUMABLE_CRACK_FILL_THRESHOLD
+      : 0;
+
+    let crackFillWeight = 1;
+    if (isConsumableCandidate) {
+      if (remainingBudget > 0 && crackFillThreshold > 0 && remainingBudget <= crackFillThreshold) {
+        crackFillWeight *= CONSUMABLE_CRACK_FILL_BOOST;
+      }
+      if (!consumableSelections.length && (selectedItems || []).length > 0) {
+        crackFillWeight *= CONSUMABLE_FIRST_SHOWUP_BOOST;
+      }
+    } else if (consumableSelections.length && remainingBudget > 0 && crackFillThreshold > 0 && remainingBudget <= crackFillThreshold) {
+      crackFillWeight *= CONSUMABLE_OVERFLOW_DAMPING;
+    }
+
+    if (!consumableSelections.length) return crackFillWeight;
+    if (!sourceType || sourceType === "permanent") return crackFillWeight;
 
     const sameTypeSelections = consumableSelections.filter((item) => normalizeText(item?.sourceType) === sourceType);
     const sameSpellSelections = isSpellConsumableCandidate(candidate)
@@ -3216,13 +3255,18 @@
       })
       : [];
 
-    return Math.pow(CONSUMABLE_REPEAT_DAMPING, consumableSelections.length)
+    return crackFillWeight
+      * Math.pow(CONSUMABLE_REPEAT_DAMPING, consumableSelections.length)
       * Math.pow(SAME_CONSUMABLE_TYPE_DAMPING, sameTypeSelections.length)
       * Math.pow(SAME_CONSUMABLE_SPELL_DAMPING, sameSpellSelections.length);
   }
 
   function isSpellConsumableCandidate(candidate) {
     return String(candidate?.generationSource?.kind || "") === "spell-consumable";
+  }
+
+  function isConsumableSourceType(sourceType) {
+    return new Set(["potion", "scroll", "wand"]).has(normalizeText(sourceType));
   }
 
   function clampInteger(value, min, max) {
@@ -3798,28 +3842,27 @@
   }
 
   function isHealingSpell(spellData) {
-    if (normalizeText(foundry.utils.getProperty(spellData, "system.subschool")) === "healing") return true;
-
-    const actions = Object.values(foundry.utils.getProperty(spellData, "system.actions") || {});
-    if (actions.some((action) => normalizeText(action?.actionType) === "heal")) return true;
-
-    const spellName = normalizeText(spellData?.name);
-    return ["cure ", "mass cure", "remove ", "heal", "healing", "restoration", "rejuvenat", "vigor"].some((term) => spellName.includes(term));
+    return isPreferredHealingSpellName(spellData?.name);
   }
 
   function getConsumableSpellPreferenceWeight(option, sourceType) {
     const normalizedType = normalizeText(sourceType);
-    const spellName = normalizeText(option?.spellName || "");
+    const spellName = String(option?.spellName || "");
 
     if (normalizedType === "potion") {
-      return (spellName.includes("cure") || spellName.includes("remove")) ? 1.5 : 1;
+      return isPreferredHealingSpellName(spellName) ? HEALING_POTION_NAME_WEIGHT : 1;
     }
 
     if (new Set(["scroll", "wand"]).has(normalizedType)) {
-      return option?.isHealing ? 1.2 : 1;
+      return isPreferredHealingSpellName(spellName) ? HEALING_SCROLL_WAND_NAME_WEIGHT : 1;
     }
 
     return 1;
+  }
+
+  function isPreferredHealingSpellName(spellName) {
+    const normalizedSpellName = normalizeText(spellName);
+    return normalizedSpellName.includes("cure") || normalizedSpellName.includes("remove");
   }
 
   function buildSyntheticLootItemId(consumableType, spellUuid, spellLevel, casterLevel, uses) {
@@ -4105,6 +4148,30 @@
     if (casterType === "medium") return Math.max(1, (safeLevel * 3) - 1);
     if (casterType === "low") return Math.max(1, (safeLevel * 3));
     return Math.max(1, (safeLevel * 2) - 1);
+  }
+
+  function buildReplacementBudgetRange(itemToReplace, generatedItems, targetBudget) {
+    const totalWithoutItem = sumItemPrices((generatedItems || []).filter((item) => item?.uuid !== itemToReplace?.uuid));
+    const minimumListTotal = Math.floor((Number(targetBudget) || 0) * (1 - TARGET_TOLERANCE));
+    const maximumListTotal = Math.ceil((Number(targetBudget) || 0) * (1 + TARGET_TOLERANCE));
+
+    return {
+      minimumTotal: Math.max(0, minimumListTotal - totalWithoutItem),
+      maximumTotal: Math.max(0, maximumListTotal - totalWithoutItem),
+    };
+  }
+
+  function chooseReplacementBudgetTarget(range, fallbackValue) {
+    const minimumTotal = Math.max(0, Number(range?.minimumTotal) || 0);
+    const maximumTotal = Math.max(minimumTotal, Number(range?.maximumTotal) || 0);
+    const fallback = Math.max(minimumTotal, Math.min(maximumTotal, Number(fallbackValue) || 0));
+    if (maximumTotal <= minimumTotal) return fallback;
+
+    const center = clampNumber(fallback, minimumTotal, maximumTotal);
+    const spread = maximumTotal - minimumTotal;
+    const bias = (Math.random() + Math.random()) / 2;
+    const biasedTarget = minimumTotal + (spread * bias);
+    return Math.max(minimumTotal, Math.min(maximumTotal, (center * 0.65) + (biasedTarget * 0.35)));
   }
 
   function escapeHtml(value) {
