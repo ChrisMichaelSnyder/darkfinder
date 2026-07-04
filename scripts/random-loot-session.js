@@ -9,6 +9,12 @@ const GM_DIALOG_HEIGHT = 760;
 const RESPONSE_FLAG_KEY = "randomLootSessionResponse";
 const RESULTS_DISMISS_FLAG_KEY = "randomLootResultsDismissedSessionId";
 const FORCE_SUBMIT_WARNING = "Forcing done will lock in every player's currently claimed items whether they are ready or not. Are you sure you want to do that?";
+const CURRENCY_DENOMINATIONS = [
+  { key: "pp", valueGp: 10 },
+  { key: "gp", valueGp: 1 },
+  { key: "sp", valueGp: 0.1 },
+  { key: "cp", valueGp: 0.01 },
+];
 
 const lootSessionState = {
   dialogStateBySessionId: new Map(),
@@ -350,6 +356,13 @@ async function resolveLootSessionAwards(session) {
     const claimantIds = getResolvedClaimantUserIds(session, itemUuid);
     if (!claimantIds.length) continue;
 
+     if (normalizeText(item?.sourceType) === "coinsgemsart" && item?.currencyBreakdown) {
+      const currencyResolution = await resolveCurrencyLootAwards(item, claimantIds, wealthByUserId, sessionStatsByUserId);
+      awardsByItemUuid[itemUuid] = currencyResolution.awards;
+      contests.push(...currencyResolution.contests);
+      continue;
+    }
+
     if (claimantIds.length === 1) {
       awardsByItemUuid[itemUuid] = [{
         userId: claimantIds[0],
@@ -410,6 +423,62 @@ async function resolveLootSessionAwards(session) {
   };
 }
 
+async function resolveCurrencyLootAwards(item, claimantIds, wealthByUserId, sessionStatsByUserId) {
+  const breakdown = cloneCurrencyBreakdown(item?.currencyBreakdown) || {};
+  const currencyAwards = [];
+  const contests = [];
+
+  for (const denomination of CURRENCY_DENOMINATIONS) {
+    const denominationKey = denomination.key;
+    const denominationQuantity = Math.max(0, Number(breakdown?.[denominationKey]) || 0);
+    if (denominationQuantity <= 0) continue;
+
+    const denominationAwards = [];
+    const baseShare = Math.floor(denominationQuantity / claimantIds.length);
+    let remainder = denominationQuantity % claimantIds.length;
+
+    if (baseShare > 0) {
+      for (const userId of claimantIds) {
+        denominationAwards.push({
+          userId,
+          quantity: 1,
+          method: "split",
+          currencyBreakdown: { [denominationKey]: baseShare },
+        });
+      }
+    }
+
+    while (remainder > 0) {
+      const eligibleClaimantIds = getLowestAwardedClaimantIdsForCurrency(claimantIds, denominationAwards, denominationKey);
+      const contest = await rollItemContest(
+        {
+          ...item,
+          name: `${String(item?.name || "Currency")} (${denominationKey.toUpperCase()})`,
+        },
+        eligibleClaimantIds,
+        wealthByUserId,
+        sessionStatsByUserId
+      );
+      contests.push(contest);
+      denominationAwards.push({
+        userId: contest.winnerUserId,
+        quantity: 1,
+        method: "contested",
+        currencyBreakdown: { [denominationKey]: 1 },
+      });
+      updateContestStats(sessionStatsByUserId, contest);
+      remainder -= 1;
+    }
+
+    currencyAwards.push(...denominationAwards);
+  }
+
+  return {
+    awards: mergeCurrencyAwardEntries(currencyAwards),
+    contests,
+  };
+}
+
 function getLowestAwardedClaimantIds(claimantIds, itemAwards) {
   const awardCountByUserId = Object.fromEntries(
     (claimantIds || []).map((userId) => [String(userId || "").trim(), 0])
@@ -419,6 +488,25 @@ function getLowestAwardedClaimantIds(claimantIds, itemAwards) {
     const userId = String(award?.userId || "").trim();
     if (!userId || !Object.prototype.hasOwnProperty.call(awardCountByUserId, userId)) continue;
     awardCountByUserId[userId] += Math.max(1, Number(award?.quantity) || 1);
+  }
+
+  const counts = Object.values(awardCountByUserId);
+  const minimumAwardCount = counts.length ? Math.min(...counts) : 0;
+
+  return (claimantIds || []).filter((userId) => {
+    return awardCountByUserId[String(userId || "").trim()] === minimumAwardCount;
+  });
+}
+
+function getLowestAwardedClaimantIdsForCurrency(claimantIds, itemAwards, denominationKey) {
+  const awardCountByUserId = Object.fromEntries(
+    (claimantIds || []).map((userId) => [String(userId || "").trim(), 0])
+  );
+
+  for (const award of itemAwards || []) {
+    const userId = String(award?.userId || "").trim();
+    if (!userId || !Object.prototype.hasOwnProperty.call(awardCountByUserId, userId)) continue;
+    awardCountByUserId[userId] += Math.max(0, Number(award?.currencyBreakdown?.[denominationKey]) || 0);
   }
 
   const counts = Object.values(awardCountByUserId);
@@ -508,6 +596,11 @@ async function awardResolvedLoot(items, awardsByItemUuid) {
       const actor = resolveLootRecipientActor(user);
       if (!actor) continue;
 
+      if (normalizeText(item?.sourceType) === "coinsgemsart" && award?.currencyBreakdown) {
+        await applyCurrencyAwardToActor(actor, award.currencyBreakdown);
+        continue;
+      }
+
       const quantity = Math.max(1, Number(award?.quantity) || 1);
       const itemSource = await createAwardItemSource(item, quantity);
       if (!itemSource) continue;
@@ -561,6 +654,22 @@ function applyItemQuantityToSource(source, quantity) {
   }
   source.system = source.system || {};
   source.system.quantity = quantity;
+}
+
+async function applyCurrencyAwardToActor(actor, currencyBreakdown) {
+  if (!actor || !currencyBreakdown) return;
+
+  const updates = {};
+  for (const denomination of CURRENCY_DENOMINATIONS) {
+    const amount = Math.max(0, Number(currencyBreakdown?.[denomination.key]) || 0);
+    if (amount <= 0) continue;
+    const current = extractNumericCount(foundry.utils.getProperty(actor, `system.currency.${denomination.key}`));
+    updates[`system.currency.${denomination.key}`] = current + amount;
+  }
+
+  if (Object.keys(updates).length) {
+    await actor.update(updates);
+  }
 }
 
 function applyGeneratedConsumableStateToSource(source, item) {
@@ -1288,9 +1397,12 @@ function buildLootResultsRowsHtml(session) {
       const userId = String(award?.userId || "").trim();
       if (!userId || !item) continue;
       const existing = awardsByUserId.get(userId) || [];
+      const awardCurrencyBreakdown = cloneCurrencyBreakdown(award?.currencyBreakdown);
       existing.push({
         ...item,
+        currencyBreakdown: awardCurrencyBreakdown || cloneCurrencyBreakdown(item?.currencyBreakdown),
         awardQuantity: Math.max(1, Number(award?.quantity) || 1),
+        totalPrice: awardCurrencyBreakdown ? getCurrencyBreakdownTotalPrice(awardCurrencyBreakdown) : undefined,
       });
       awardsByUserId.set(userId, existing);
     }
@@ -2012,6 +2124,7 @@ function normalizeSessionItems(items) {
     typeLabel: String(item?.typeLabel || ""),
     quantity: Math.max(1, Number(item?.quantity) || 1),
     sourceType: String(item?.sourceType || "permanent"),
+    currencyBreakdown: cloneCurrencyBreakdown(item?.currencyBreakdown),
     generationSource: cloneGenerationSource(item?.generationSource),
   })).filter((item) => item.uuid && item.name);
 }
@@ -2028,6 +2141,16 @@ function cloneGenerationSource(source) {
     spellType: String(source.spellType || "arcane"),
     identified: source.identified !== false,
   };
+}
+
+function cloneCurrencyBreakdown(breakdown) {
+  if (!breakdown || typeof breakdown !== "object") return null;
+  const cloned = {};
+  for (const denomination of CURRENCY_DENOMINATIONS) {
+    const amount = Math.max(0, Number(breakdown?.[denomination.key]) || 0);
+    if (amount > 0) cloned[denomination.key] = amount;
+  }
+  return Object.keys(cloned).length ? cloned : null;
 }
 
 async function resolveLootItemDocument(item) {
@@ -2066,6 +2189,36 @@ function mergeAwardEntries(entries) {
     merged.set(userId, current);
   }
   return Array.from(merged.values());
+}
+
+function mergeCurrencyAwardEntries(entries) {
+  const merged = new Map();
+
+  for (const entry of entries || []) {
+    const userId = String(entry?.userId || "").trim();
+    if (!userId) continue;
+
+    const current = merged.get(userId) || {
+      userId,
+      quantity: 1,
+      method: entry.method || "uncontested",
+      currencyBreakdown: {},
+    };
+
+    for (const denomination of CURRENCY_DENOMINATIONS) {
+      const amount = Math.max(0, Number(entry?.currencyBreakdown?.[denomination.key]) || 0);
+      if (amount <= 0) continue;
+      current.currencyBreakdown[denomination.key] = Math.max(0, Number(current.currencyBreakdown?.[denomination.key]) || 0) + amount;
+    }
+
+    if (entry.method === "contested") current.method = "contested";
+    merged.set(userId, current);
+  }
+
+  return Array.from(merged.values()).map((entry) => ({
+    ...entry,
+    currencyBreakdown: cloneCurrencyBreakdown(entry.currencyBreakdown),
+  }));
 }
 
 async function broadcastLootSessionMessage(message) {
@@ -2542,13 +2695,35 @@ function sumItemPrices(items) {
 function getItemTotalPrice(item) {
   const explicitTotal = Number(item?.totalPrice);
   if (Number.isFinite(explicitTotal) && explicitTotal > 0) return explicitTotal;
+  if (item?.currencyBreakdown) return getCurrencyBreakdownTotalPrice(item.currencyBreakdown);
   return (Number(item?.price) || 0) * Math.max(1, Number(item?.quantity) || 1);
 }
 
 function buildDisplayItemName(item) {
+  if (item?.currencyBreakdown) {
+    return formatCurrencyBreakdownName(item.currencyBreakdown);
+  }
   const quantity = Math.max(1, Number(item?.quantity) || 1);
   const baseName = String(item?.name || "Unnamed Item").replace(/^\d+x\s+/i, "");
   return quantity > 1 ? `${quantity}x ${baseName}` : baseName;
+}
+
+function formatCurrencyBreakdownName(breakdown) {
+  return CURRENCY_DENOMINATIONS
+    .map((denomination) => {
+      const amount = Math.max(0, Number(breakdown?.[denomination.key]) || 0);
+      if (!amount) return "";
+      return `${amount.toLocaleString("en-US")}${denomination.key}`;
+    })
+    .filter(Boolean)
+    .join(" ");
+}
+
+function getCurrencyBreakdownTotalPrice(breakdown) {
+  return CURRENCY_DENOMINATIONS.reduce((sum, denomination) => {
+    const amount = Math.max(0, Number(breakdown?.[denomination.key]) || 0);
+    return sum + (amount * denomination.valueGp);
+  }, 0);
 }
 
 function formatGold(value) {

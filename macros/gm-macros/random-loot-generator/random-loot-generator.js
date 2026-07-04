@@ -12,6 +12,9 @@
   const MAX_REROLL_ITEMS = 8;
   const TARGET_TOLERANCE = 0.1;
   const CAP_RARITY_WEIGHT_STRENGTH = 1.5;
+  const COIN_BUDGET_PERCENT_MIN = 0.05;
+  const COIN_BUDGET_PERCENT_MAX = 0.3;
+  const COIN_ICON = "icons/commodities/currency/coins-assorted-mix-copper-silver-gold.webp";
   const CONSUMABLE_WAND_CHARGE_OPTIONS = [50, 40, 30, 20, 10];
   const CONSUMABLE_STACK_SIZE_OPTIONS = [1, 2, 3, 4, 5];
   const CONSUMABLE_CATEGORY_WEIGHTS = {
@@ -51,6 +54,12 @@
   ];
   const LOOT_CACHE_KEY = "__darkfinderRandomLootCache";
   const LOOT_CACHE_VERSION = "v5";
+  const CURRENCY_DENOMINATIONS = [
+    { key: "pp", valueCp: 1000 },
+    { key: "gp", valueCp: 100 },
+    { key: "sp", valueCp: 10 },
+    { key: "cp", valueCp: 1 },
+  ];
   const wealthTablePayload = {
     source: {
       label: "Pathfinder 1e Character Wealth by Level",
@@ -304,6 +313,9 @@
 
       try {
         const clickedItem = state.generatedItems.find((item) => item.uuid === itemUuid) || null;
+        if (normalizeText(clickedItem?.sourceType) === "coinsgemsart") {
+          return ui.notifications.info("Currency bundles do not have a compendium sheet to open.");
+        }
         const document = await resolveLootItemDocument(clickedItem);
         if (!document?.sheet) {
           return ui.notifications.warn("That compendium item could not be opened.");
@@ -493,13 +505,25 @@
 
     const packs = resolveLootCompendiumPacks();
     const candidateItems = await loadLootCandidates(packs, maxSingleItemValue, settings.partyLevel, state.enabledLootTypes);
-    if (!candidateItems.length) {
+    const selectedItems = [];
+    let totalValue = 0;
+
+    if (isLootTypeEnabled(state.enabledLootTypes, "coinsGemsArt") && settings.maxItems > 0) {
+      const currencyBudget = chooseCurrencyBudgetAmount(targetBudget);
+      if (currencyBudget > 0) {
+        const currencyItem = createCurrencyLootItemFromBudget(currencyBudget);
+        if (currencyItem) {
+          selectedItems.push(currencyItem);
+          totalValue += getItemTotalPrice(currencyItem);
+        }
+      }
+    }
+
+    if (!candidateItems.length && !selectedItems.length) {
       throw new Error(`No eligible loot candidates were found at or below ${formatGold(maxSingleItemValue)} gp.`);
     }
 
     const remainingCandidates = [...candidateItems];
-    const selectedItems = [];
-    let totalValue = 0;
 
     while (remainingCandidates.length && selectedItems.length < settings.maxItems) {
       if (totalValue >= minimumTarget && totalValue <= maximumTarget) break;
@@ -553,9 +577,15 @@
   }
 
   async function rerollGeneratedItem(itemToReplace, state, wealthByLevel) {
+    if (normalizeText(itemToReplace?.sourceType) === "coinsgemsart") {
+      const rerolledCurrency = createCurrencyLootItemFromBudget(getItemTotalPrice(itemToReplace), { preserveTotal: true });
+      return rerolledCurrency ? [rerolledCurrency] : [];
+    }
+
     const settings = buildGeneratedLootSettings(state, wealthByLevel);
     const maxSingleItemValue = settings.maxSingleItemValue;
     const packs = resolveLootCompendiumPacks();
+    const availableReplacementSlots = Math.max(1, settings.maxItems - Math.max(0, state.generatedItems.length - 1));
 
     const excludedUuids = new Set(state.generatedItems.map((item) => item.uuid));
     excludedUuids.delete(itemToReplace.uuid);
@@ -568,7 +598,7 @@
     }
 
     const rerolled = await buildItemBundleForTarget(getItemTotalPrice(itemToReplace), candidateItems, {
-      maxItems: MAX_REROLL_ITEMS,
+      maxItems: Math.min(MAX_REROLL_ITEMS, availableReplacementSlots),
       maxSingleItemValue,
       rerolledItemCounts: state.rerolledItemCounts,
     });
@@ -593,10 +623,42 @@
       return "<div class=\"darkfinder-random-loot-results-empty\">No generated items yet.</div>";
     }
 
-    return items.map((item) => `
-      <div
-        class="darkfinder-random-loot-item-row"
-      >
+    return buildGroupedLootListHtml(items, {
+      emptyText: "No generated items yet.",
+      includeActions: true,
+      includeCheckboxes: false,
+    });
+  }
+
+  function buildPlayerGeneratedItemsHtml(items) {
+    if (!items?.length) {
+      return "<div class=\"darkfinder-random-loot-results-empty\">No items have been shared yet.</div>";
+    }
+
+    return buildGroupedLootListHtml(items, {
+      emptyText: "No items have been shared yet.",
+      includeActions: false,
+      includeCheckboxes: true,
+    });
+  }
+
+  function buildGroupedLootListHtml(items, options = {}) {
+    if (!items?.length) {
+      return `<div class="darkfinder-random-loot-results-empty">${escapeHtml(options.emptyText || "No items available.")}</div>`;
+    }
+
+    return groupItemsByLootType(items).map((group) => `
+      <div class="darkfinder-random-loot-type-group">
+        <div class="darkfinder-random-loot-type-header">${escapeHtml(group.label)}</div>
+        ${group.items.map((item) => buildLootListRowHtml(item, options)).join("")}
+      </div>
+    `).join("");
+  }
+
+  function buildLootListRowHtml(item, options = {}) {
+    const isClaimed = !!item?.claimed;
+    const leadingControl = options.includeActions
+      ? `
         <span class="darkfinder-random-loot-item-actions darkfinder-random-loot-item-actions-left">
           <button
             type="button"
@@ -615,6 +677,25 @@
             aria-label="Remove ${escapeHtml(item.name)}"
           ><img src="icons/svg/cancel.svg" alt="" /></button>
         </span>
+      `
+      : options.includeCheckboxes
+        ? `
+          <span class="darkfinder-random-loot-item-actions darkfinder-random-loot-item-actions-left darkfinder-random-loot-player-item-actions-left">
+            <input
+              type="checkbox"
+              class="darkfinder-random-loot-player-item-checkbox"
+              data-player-item-action="toggle-claim"
+              data-item-uuid="${escapeHtml(item.uuid)}"
+              aria-label="Include ${escapeHtml(item.name)}"
+              ${isClaimed ? "checked" : ""}
+            />
+          </span>
+        `
+        : "";
+
+    return `
+      <div class="darkfinder-random-loot-item-row">
+        ${leadingControl}
         <div
           class="darkfinder-random-loot-item-body"
           data-item-uuid="${escapeHtml(item.uuid)}"
@@ -626,42 +707,7 @@
           <span class="darkfinder-random-loot-item-price">${formatGold(getItemTotalPrice(item))} gp</span>
         </div>
       </div>
-    `).join("");
-  }
-
-  function buildPlayerGeneratedItemsHtml(items) {
-    if (!items?.length) {
-      return "<div class=\"darkfinder-random-loot-results-empty\">No items have been shared yet.</div>";
-    }
-
-    return items.map((item) => {
-      const isClaimed = !!item?.claimed;
-
-      return `
-        <div class="darkfinder-random-loot-item-row">
-          <span class="darkfinder-random-loot-item-actions darkfinder-random-loot-item-actions-left darkfinder-random-loot-player-item-actions-left">
-            <input
-              type="checkbox"
-              class="darkfinder-random-loot-player-item-checkbox"
-              data-player-item-action="toggle-claim"
-              data-item-uuid="${escapeHtml(item.uuid)}"
-              aria-label="Include ${escapeHtml(item.name)}"
-              ${isClaimed ? "checked" : ""}
-            />
-          </span>
-          <div
-            class="darkfinder-random-loot-item-body"
-            data-item-uuid="${escapeHtml(item.uuid)}"
-          >
-            <span class="darkfinder-random-loot-item-main">
-              <img class="darkfinder-random-loot-item-icon" src="${escapeHtml(item.img || "icons/svg/dice-target.svg")}" alt="" loading="lazy" />
-              <span class="darkfinder-random-loot-item-name">${escapeHtml(buildDisplayItemName(item))}</span>
-            </span>
-            <span class="darkfinder-random-loot-item-price">${formatGold(getItemTotalPrice(item))} gp</span>
-          </div>
-        </div>
-      `;
-    }).join("");
+    `;
   }
 
   function createPlayerLootPayload(items) {
@@ -677,6 +723,7 @@
       typeLabel: String(item?.typeLabel || ""),
       quantity: Math.max(1, Number(item?.quantity) || 1),
       sourceType: String(item?.sourceType || "permanent"),
+      currencyBreakdown: cloneCurrencyBreakdown(item?.currencyBreakdown),
       generationSource: cloneGenerationSource(item?.generationSource),
       claimed: false,
     }));
@@ -772,6 +819,9 @@
 
       try {
         const clickedItem = state.items.find((item) => item.uuid === itemUuid) || null;
+        if (normalizeText(clickedItem?.sourceType) === "coinsgemsart") {
+          return ui.notifications.info("Currency bundles do not have a compendium sheet to open.");
+        }
         const document = await resolveLootItemDocument(clickedItem);
         if (!document?.sheet) {
           return ui.notifications.warn("That compendium item could not be opened.");
@@ -1490,6 +1540,17 @@
           color: #746554;
           text-align: center;
         }
+        .darkfinder-random-loot-budget-highlight {
+          display: grid;
+          gap: 0.35rem;
+          padding: 0.7rem 0.8rem;
+          border: 1px solid rgba(111, 92, 58, 0.55);
+          border-radius: 12px;
+          background: linear-gradient(180deg, rgba(255,255,255,0.32) 0%, rgba(240,232,214,0.72) 100%);
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.45),
+            0 2px 6px rgba(76, 67, 55, 0.08);
+        }
         .darkfinder-random-loot-budget {
           display: grid;
           grid-template-columns: minmax(0, 1fr);
@@ -1650,6 +1711,23 @@
           background: rgba(255,255,255,0.38);
           color: #6a6051;
           text-align: center;
+        }
+        .darkfinder-random-loot-type-group {
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+        }
+        .darkfinder-random-loot-type-group + .darkfinder-random-loot-type-group {
+          margin-top: 0.25rem;
+        }
+        .darkfinder-random-loot-type-header {
+          padding: 0 0.2rem;
+          color: #6a5a48;
+          font-size: 0.76rem;
+          font-weight: 900;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
+          text-align: left;
         }
         .darkfinder-random-loot-item-row {
           display: grid;
@@ -1870,11 +1948,13 @@
           <div class="darkfinder-random-loot-summary">
             <div class="darkfinder-random-loot-summary-label">Treasure Budget</div>
             <div class="darkfinder-random-loot-budget">
-              <div
-                class="darkfinder-random-loot-budget-total"
-                data-value="budget-total"
-                title="0 x 0 x 0%"
-              >0 gp</div>
+              <div class="darkfinder-random-loot-budget-highlight">
+                <div
+                  class="darkfinder-random-loot-budget-total"
+                  data-value="budget-total"
+                  title="0 x 0 x 0%"
+                >0 gp</div>
+              </div>
               <div class="darkfinder-random-loot-budget-side">
                 <div class="darkfinder-random-loot-budget-side-group">
                   <div class="darkfinder-random-loot-budget-side-help"><span>Party vs</span><span>next WBL</span></div>
@@ -3101,7 +3181,166 @@
     return (Number(item?.price) || 0) * Math.max(1, Number(item?.quantity) || 1);
   }
 
+  function groupItemsByLootType(items) {
+    const groupsByKey = new Map();
+    for (const item of items || []) {
+      const typeKey = getLootTypeGroupKey(item);
+      if (!groupsByKey.has(typeKey)) {
+        groupsByKey.set(typeKey, {
+          key: typeKey,
+          label: getLootTypeGroupLabel(typeKey),
+          items: [],
+        });
+      }
+      groupsByKey.get(typeKey).items.push(item);
+    }
+
+    return Array.from(groupsByKey.values())
+      .sort((left, right) => getLootTypeGroupSortOrder(left.key) - getLootTypeGroupSortOrder(right.key))
+      .map((group) => ({
+        ...group,
+        items: sortItemsByPriceDesc(group.items),
+      }));
+  }
+
+  function getLootTypeGroupKey(item) {
+    const sourceType = normalizeText(item?.sourceType || "");
+    if (sourceType === "potion") return "potion";
+    if (sourceType === "scroll") return "scroll";
+    if (sourceType === "wand") return "wand";
+    if (sourceType === "armsarmor") return "armsArmor";
+    if (sourceType === "wondrous") return "wondrous";
+    if (sourceType === "coinsgemsart") return "coinsGemsArt";
+    return "other";
+  }
+
+  function getLootTypeGroupLabel(typeKey) {
+    const labels = {
+      coinsGemsArt: "Coins / Gems / Art",
+      potion: "Potions",
+      scroll: "Scrolls",
+      wand: "Wands",
+      armsArmor: "Arms / Armor",
+      wondrous: "Wondrous",
+      other: "Other",
+    };
+    return labels[typeKey] || "Other";
+  }
+
+  function getLootTypeGroupSortOrder(typeKey) {
+    const order = {
+      coinsGemsArt: 1,
+      potion: 2,
+      scroll: 3,
+      wand: 4,
+      armsArmor: 5,
+      wondrous: 6,
+      other: 7,
+    };
+    return Number(order[typeKey] || order.other);
+  }
+
+  function chooseCurrencyBudgetAmount(totalBudget) {
+    const safeBudget = Math.max(0, Number(totalBudget) || 0);
+    if (safeBudget <= 0) return 0;
+
+    const normalizedRoll = Math.pow(Math.random(), 1.85);
+    const percent = COIN_BUDGET_PERCENT_MIN + ((COIN_BUDGET_PERCENT_MAX - COIN_BUDGET_PERCENT_MIN) * normalizedRoll);
+    const budgetCp = Math.max(1, Math.round(safeBudget * percent * 100));
+    return budgetCp / 100;
+  }
+
+  function createCurrencyLootItemFromBudget(totalGold, options = {}) {
+    const totalCp = Math.max(0, Math.round((Number(totalGold) || 0) * 100));
+    if (totalCp <= 0) return null;
+
+    const breakdown = buildCurrencyBreakdownFromCopper(totalCp, options);
+    const totalValueGold = totalCp / 100;
+
+    return {
+      id: `currency:${totalCp}:${randomID()}`,
+      uuid: `Synthetic.RandomLoot.Currency.${totalCp}.${randomID()}`,
+      sourceUuid: "",
+      name: formatCurrencyBreakdownName(breakdown),
+      img: COIN_ICON,
+      price: totalValueGold,
+      totalPrice: totalValueGold,
+      description: "A loose bundle of mixed coin.",
+      typeLabel: "Currency",
+      quantity: 1,
+      sourceType: "coinsGemsArt",
+      currencyBreakdown: breakdown,
+      generationSource: {
+        kind: "currency",
+      },
+    };
+  }
+
+  function buildCurrencyBreakdownFromCopper(totalCp, options = {}) {
+    const breakdown = {};
+    let remainingCp = Math.max(0, Math.floor(Number(totalCp) || 0));
+
+    for (const denomination of CURRENCY_DENOMINATIONS) {
+      const count = Math.floor(remainingCp / denomination.valueCp);
+      breakdown[denomination.key] = count;
+      remainingCp -= count * denomination.valueCp;
+    }
+
+    applyCurrencyBreakdowns(breakdown, options);
+    return breakdown;
+  }
+
+  function applyCurrencyBreakdowns(breakdown, options = {}) {
+    const coinBreakChances = {
+      pp: 0.12,
+      gp: 0.1,
+      sp: 0.08,
+    };
+
+    if (!options.preserveTotal && breakdown.pp > 0 && Math.random() < coinBreakChances.pp) {
+      const converted = Math.max(1, Math.min(breakdown.pp, 1 + Math.floor(Math.random() * Math.min(3, breakdown.pp))));
+      breakdown.pp -= converted;
+      breakdown.gp = (breakdown.gp || 0) + (converted * 10);
+    }
+
+    if (breakdown.gp > 0 && Math.random() < coinBreakChances.gp) {
+      const converted = Math.max(1, Math.min(breakdown.gp, 1 + Math.floor(Math.random() * Math.min(8, breakdown.gp))));
+      breakdown.gp -= converted;
+      breakdown.sp = (breakdown.sp || 0) + (converted * 10);
+    }
+
+    if (breakdown.sp > 0 && Math.random() < coinBreakChances.sp) {
+      const converted = Math.max(1, Math.min(breakdown.sp, 1 + Math.floor(Math.random() * Math.min(12, breakdown.sp))));
+      breakdown.sp -= converted;
+      breakdown.cp = (breakdown.cp || 0) + (converted * 10);
+    }
+  }
+
+  function formatCurrencyBreakdownName(breakdown) {
+    return CURRENCY_DENOMINATIONS
+      .map((denomination) => {
+        const amount = Math.max(0, Number(breakdown?.[denomination.key]) || 0);
+        if (!amount) return "";
+        return `${amount.toLocaleString("en-US")}${denomination.key}`;
+      })
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  function cloneCurrencyBreakdown(breakdown) {
+    if (!breakdown || typeof breakdown !== "object") return null;
+    const cloned = {};
+    for (const denomination of CURRENCY_DENOMINATIONS) {
+      const amount = Math.max(0, Number(breakdown?.[denomination.key]) || 0);
+      if (amount > 0) cloned[denomination.key] = amount;
+    }
+    return Object.keys(cloned).length ? cloned : null;
+  }
+
   function buildDisplayItemName(item) {
+    if (item?.currencyBreakdown) {
+      return formatCurrencyBreakdownName(item.currencyBreakdown);
+    }
     const quantity = Math.max(1, Number(item?.quantity) || 1);
     const baseName = String(item?.name || "Unnamed Item").replace(/^\d+x\s+/i, "");
     return quantity > 1 ? `${quantity}x ${baseName}` : baseName;
