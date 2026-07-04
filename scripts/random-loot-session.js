@@ -8,7 +8,6 @@ const GM_DIALOG_WIDTH = 760;
 const GM_DIALOG_HEIGHT = 760;
 const RESPONSE_FLAG_KEY = "randomLootSessionResponse";
 const FORCE_SUBMIT_WARNING = "Forcing submissions will lock in every players currently claimed items whether they are ready or not. Are you sure you want to do that?";
-const PLAYER_SUBMIT_WARNING = "Hitting Submit will lock in your claims and they can't be changed. Are you sure?";
 
 const lootSessionState = {
   dialogStateBySessionId: new Map(),
@@ -396,7 +395,6 @@ async function resolveLootSessionAwards(session) {
   }
 
   await awardResolvedLoot(session.items || [], awardsByItemUuid);
-  await createResolutionChatMessages(session.items || [], awardsByItemUuid, contests);
 
   return {
     ...session,
@@ -515,52 +513,6 @@ function applyItemQuantityToSource(source, quantity) {
   source.system.quantity = quantity;
 }
 
-async function createResolutionChatMessages(items, awardsByItemUuid, contests) {
-  const itemByUuid = Object.fromEntries((items || []).map((item) => [String(item?.uuid || ""), item]));
-  const summaryLines = [];
-
-  for (const [itemUuid, awards] of Object.entries(awardsByItemUuid || {})) {
-    const item = itemByUuid[itemUuid];
-    const awardSummary = (awards || []).map((award) => {
-      const user = game.users.get(String(award?.userId || "").trim());
-      const actorName = String(user?.character?.name || user?.name || "Unknown");
-      const quantityText = (Number(award?.quantity) || 1) > 1 ? ` x${award.quantity}` : "";
-      return `${actorName}${quantityText}`;
-    }).join(", ");
-    summaryLines.push(`<li><strong>${escapeHtml(String(item?.name || "Unnamed Item"))}</strong>: ${escapeHtml(awardSummary || "No recipient")}</li>`);
-  }
-
-  if (summaryLines.length) {
-    await ChatMessage.create({
-      content: `
-        <div class="darkfinder-loot-resolution-chat">
-          <h3>Loot Claim Results</h3>
-          <ul>${summaryLines.join("")}</ul>
-        </div>
-      `,
-    });
-  }
-
-  for (const contest of contests || []) {
-    const contestLines = (contest.results || []).map((result) => {
-      const user = game.users.get(String(result?.userId || "").trim());
-      const actorName = String(user?.character?.name || user?.name || "Unknown");
-      return `<li>${escapeHtml(actorName)}: ${result.rollTotal} + ${formatSignedModifier(result.modifier)} = <strong>${result.total}</strong></li>`;
-    }).join("");
-    const winnerUser = game.users.get(String(contest.winnerUserId || "").trim());
-    const winnerName = String(winnerUser?.character?.name || winnerUser?.name || "Unknown");
-    await ChatMessage.create({
-      content: `
-        <div class="darkfinder-loot-resolution-chat">
-          <h4>Contested: ${escapeHtml(String(contest.itemName || "Unnamed Item"))}</h4>
-          <ul>${contestLines}</ul>
-          <p><strong>Winner:</strong> ${escapeHtml(winnerName)}</p>
-        </div>
-      `,
-    });
-  }
-}
-
 async function openOrRefreshLootSessionDialog(sessionId, fallbackSession = null) {
   const session = resolveSessionForClient(sessionId, fallbackSession);
   if (!session?.id || session.id !== sessionId) return;
@@ -584,6 +536,7 @@ async function openOrRefreshLootSessionDialog(sessionId, fallbackSession = null)
     role,
     eventRoot: null,
     dialog: null,
+    suppressCancelOnClose: false,
   };
 
   const dialog = new Dialog({
@@ -653,6 +606,9 @@ async function openOrRefreshLootSessionDialog(sessionId, fallbackSession = null)
       if (current?.dialog === dialog) {
         lootSessionState.dialogStateBySessionId.delete(sessionId);
       }
+      if (role === "gm" && !dialogState.suppressCancelOnClose && dialogState.session?.status === "collecting") {
+        void cancelRandomLootClaimSession(sessionId, { silent: true });
+      }
     },
   });
 
@@ -665,6 +621,7 @@ function closeLootSessionDialog(sessionId) {
   const state = lootSessionState.dialogStateBySessionId.get(sessionId);
   if (!state?.dialog) return;
   lootSessionState.dialogStateBySessionId.delete(sessionId);
+  state.suppressCancelOnClose = true;
   state.dialog.close();
 }
 
@@ -924,7 +881,7 @@ function bindLootSessionDialogEvents(eventRoot, dialogState) {
 
   eventRoot.off("click", "[data-action='submit-player-loot']").on("click", "[data-action='submit-player-loot']", async (event) => {
     event.preventDefault();
-    openPlayerSubmitConfirmation(dialogState.sessionId);
+    await submitPlayerLootClaims(dialogState.sessionId);
   });
 
   eventRoot.off("click", "[data-action='cancel-player-loot-session']").on("click", "[data-action='cancel-player-loot-session']", async (event) => {
@@ -1159,6 +1116,29 @@ function buildLootResultsDialogContent() {
         color: #4f463b;
         font-size: 0.82rem;
         line-height: 1.4;
+      }
+      .darkfinder-random-loot-results-dialog .darkfinder-random-loot-tooltip-contest {
+        margin-top: 0.65rem;
+        padding-top: 0.55rem;
+        border-top: 1px solid rgba(112, 84, 71, 0.35);
+      }
+      .darkfinder-random-loot-results-dialog .darkfinder-random-loot-tooltip-contest-title,
+      .darkfinder-random-loot-results-dialog .darkfinder-random-loot-tooltip-contest-round-title {
+        font-size: 0.78rem;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        color: #746554;
+      }
+      .darkfinder-random-loot-results-dialog .darkfinder-random-loot-tooltip-contest-round + .darkfinder-random-loot-tooltip-contest-round {
+        margin-top: 0.45rem;
+      }
+      .darkfinder-random-loot-results-dialog .darkfinder-random-loot-tooltip-contest-round ul {
+        margin: 0.25rem 0 0;
+        padding-left: 1.1rem;
+        color: #4f463b;
+        font-size: 0.8rem;
+        line-height: 1.35;
       }
       .darkfinder-random-loot-dialog .dialog-buttons {
         display: none !important;
@@ -1438,12 +1418,15 @@ function buildLootSessionDialogContent(role) {
         flex: 0 0 auto;
       }
       .darkfinder-random-loot-player .darkfinder-random-loot-player-item-actions-left {
-        display: flex;
-        justify-content: center;
+        display: grid;
+        grid-template-columns: auto auto auto;
         align-items: center;
-        min-width: 5.6rem;
+        justify-content: center;
+        column-gap: 0.45rem;
+        min-width: 6.2rem;
         min-height: 4.25rem;
-        gap: 0.45rem;
+        padding: 0 0.25rem;
+        box-sizing: border-box;
       }
       .darkfinder-random-loot-player .darkfinder-random-loot-player-item-checkbox {
         width: 1.55rem;
@@ -1451,6 +1434,11 @@ function buildLootSessionDialogContent(role) {
         margin: 0;
         accent-color: #5f7346;
         cursor: pointer;
+      }
+      .darkfinder-random-loot-player .darkfinder-random-loot-player-item-divider {
+        width: 1px;
+        height: 1.7rem;
+        background: linear-gradient(180deg, rgba(112, 84, 71, 0.16) 0%, rgba(112, 84, 71, 0.8) 50%, rgba(112, 84, 71, 0.16) 100%);
       }
       .darkfinder-random-loot-player .darkfinder-random-loot-player-item-checkbox:disabled {
         cursor: default;
@@ -1532,6 +1520,29 @@ function buildLootSessionDialogContent(role) {
         line-height: 1.4;
         white-space: normal;
       }
+      .darkfinder-random-loot-player .darkfinder-random-loot-tooltip-contest {
+        margin-top: 0.65rem;
+        padding-top: 0.55rem;
+        border-top: 1px solid rgba(112, 84, 71, 0.35);
+      }
+      .darkfinder-random-loot-player .darkfinder-random-loot-tooltip-contest-title,
+      .darkfinder-random-loot-player .darkfinder-random-loot-tooltip-contest-round-title {
+        font-size: 0.78rem;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        color: #746554;
+      }
+      .darkfinder-random-loot-player .darkfinder-random-loot-tooltip-contest-round + .darkfinder-random-loot-tooltip-contest-round {
+        margin-top: 0.45rem;
+      }
+      .darkfinder-random-loot-player .darkfinder-random-loot-tooltip-contest-round ul {
+        margin: 0.25rem 0 0;
+        padding-left: 1.1rem;
+        color: #4f463b;
+        font-size: 0.8rem;
+        line-height: 1.35;
+      }
       .darkfinder-random-loot-player .darkfinder-random-loot-tooltip-description > :first-child {
         margin-top: 0;
       }
@@ -1590,6 +1601,9 @@ function buildLootSessionItemsHtml(session, role) {
       : getCurrentUserClaimedItemUuids(session.id).has(item.uuid);
     const quantity = Math.max(1, Number(item?.quantity) || 1);
     const quantityLabel = quantity > 1 ? ` x${quantity}` : "";
+    const dividerMarkup = role === "gm"
+      ? ""
+      : `<span class="darkfinder-random-loot-player-item-divider" aria-hidden="true"></span>`;
     const checkboxMarkup = role === "gm"
       ? ""
       : `
@@ -1607,6 +1621,7 @@ function buildLootSessionItemsHtml(session, role) {
       <div class="darkfinder-random-loot-item-row">
         <span class="darkfinder-random-loot-item-actions darkfinder-random-loot-player-item-actions-left">
           ${buildClaimPieChartHtml(claimantUsers)}
+          ${dividerMarkup}
           ${checkboxMarkup}
         </span>
         <div
@@ -1699,35 +1714,20 @@ function openForceSubmitConfirmation(sessionId) {
   }).render(true);
 }
 
-function openPlayerSubmitConfirmation(sessionId) {
-  new Dialog({
-    title: "Submit Claims?",
-    content: `<p>${escapeHtml(PLAYER_SUBMIT_WARNING)}</p>`,
-    buttons: {
-      cancel: {
-        label: "Cancel",
-      },
-      accept: {
-        label: "Accept",
-        callback: async () => {
-          await updateCurrentUserLootSessionResponse(sessionId, (response) => ({
-            ...response,
-            submitted: true,
-          }));
-          const dialogState = lootSessionState.dialogStateBySessionId.get(sessionId);
-          if (dialogState?.eventRoot) {
-            renderLootSessionDialogState(dialogState.eventRoot, dialogState);
-          }
-          await broadcastLootSessionMessage({
-            type: "request-submit",
-            sessionId,
-            userId: game.user.id,
-          });
-        },
-      },
-    },
-    default: "cancel",
-  }).render(true);
+async function submitPlayerLootClaims(sessionId) {
+  await updateCurrentUserLootSessionResponse(sessionId, (response) => ({
+    ...response,
+    submitted: true,
+  }));
+  const dialogState = lootSessionState.dialogStateBySessionId.get(sessionId);
+  if (dialogState?.eventRoot) {
+    renderLootSessionDialogState(dialogState.eventRoot, dialogState);
+  }
+  await broadcastLootSessionMessage({
+    type: "request-submit",
+    sessionId,
+    userId: game.user.id,
+  });
 }
 
 function sessionAppliesToCurrentUser(session) {
@@ -2124,7 +2124,9 @@ function showItemTooltip(eventRoot, session, itemUuid, event) {
     return;
   }
 
-  tooltip.html(buildItemTooltipHtml(item));
+  tooltip.html(buildItemTooltipHtml(item, {
+    contests: getItemContestEntries(session, itemUuid),
+  }));
   tooltip.addClass("is-visible");
   positionItemTooltip(eventRoot, event);
 }
@@ -2162,17 +2164,63 @@ function hideItemTooltip(eventRoot) {
   tooltip.removeClass("is-visible");
 }
 
-function buildItemTooltipHtml(item) {
+function buildItemTooltipHtml(item, options = {}) {
   const descriptionHtml = normalizeTooltipDescriptionMarkup(item?.description);
   const typeOrSlotHtml = item?.typeLabel
     ? `<div class="darkfinder-random-loot-tooltip-meta">${escapeHtml(item.typeLabel)}</div>`
     : "";
+  const contestHtml = buildItemContestTooltipHtml(options.contests);
 
   return `
     <div class="darkfinder-random-loot-tooltip-title">${escapeHtml(item?.name || "Unnamed Item")}</div>
     <div class="darkfinder-random-loot-tooltip-price">${formatGold(item?.price)} gp</div>
     ${typeOrSlotHtml}
     <div class="darkfinder-random-loot-tooltip-description">${descriptionHtml}</div>
+    ${contestHtml}
+  `;
+}
+
+function getItemContestEntries(session, itemUuid) {
+  const normalizedItemUuid = String(itemUuid || "").trim();
+  if (!normalizedItemUuid) return [];
+
+  return (Array.isArray(session?.resolution?.contests) ? session.resolution.contests : [])
+    .filter((contest) => String(contest?.itemUuid || "").trim() === normalizedItemUuid);
+}
+
+function buildItemContestTooltipHtml(contests) {
+  if (!Array.isArray(contests) || !contests.length) return "";
+
+  const roundsHtml = contests.map((contest, index) => {
+    const roundLabel = contests.length > 1 ? `Round ${index + 1}` : "Contest";
+    const resultRows = (contest.results || []).map((result) => {
+      const user = game.users.get(String(result?.userId || "").trim());
+      const actorName = String(user?.character?.name || user?.name || "Unknown");
+      const winnerBadge = String(contest?.winnerUserId || "").trim() === String(result?.userId || "").trim()
+        ? " <strong>(Winner)</strong>"
+        : "";
+      return `
+        <li>
+          ${escapeHtml(actorName)}: ${escapeHtml(String(result?.rollTotal ?? 0))}
+          + ${escapeHtml(formatSignedModifier(result?.modifier))}
+          = <strong>${escapeHtml(String(result?.total ?? 0))}</strong>${winnerBadge}
+        </li>
+      `;
+    }).join("");
+
+    return `
+      <div class="darkfinder-random-loot-tooltip-contest-round">
+        <div class="darkfinder-random-loot-tooltip-contest-round-title">${escapeHtml(roundLabel)}</div>
+        <ul>${resultRows}</ul>
+      </div>
+    `;
+  }).join("");
+
+  return `
+    <div class="darkfinder-random-loot-tooltip-contest">
+      <div class="darkfinder-random-loot-tooltip-contest-title">Contest Results</div>
+      ${roundsHtml}
+    </div>
   `;
 }
 

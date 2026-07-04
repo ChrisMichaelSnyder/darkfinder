@@ -70,6 +70,9 @@
       count: 0,
     },
     isGenerating: false,
+    activeLootSessionId: "",
+    lootSessionWatcherId: null,
+    isClosingForLootSession: false,
   };
 
   const content = buildDialogContent(state, wealthTablePayload);
@@ -144,7 +147,16 @@
         renderState(eventRoot, state, wealthByLevel);
         startLootPreload(preloadPacks);
       },
-      close: () => settle(null),
+      close: () => {
+        stopLootSessionWatcher(state);
+        if (!state.isClosingForLootSession && state.activeLootSessionId) {
+          const randomLootApi = game.modules.get("darkfinder")?.api;
+          if (typeof randomLootApi?.cancelRandomLootClaimSession === "function") {
+            void randomLootApi.cancelRandomLootClaimSession(state.activeLootSessionId, { silent: true });
+          }
+        }
+        settle(null);
+      },
     }).render(true);
   });
 
@@ -178,7 +190,6 @@
 
     eventRoot.off("click", "[data-action='cancel']").on("click", "[data-action='cancel']", (event) => {
       event.preventDefault();
-      settle(null);
       dialog.close();
     });
 
@@ -220,9 +231,12 @@
       const playerPayload = createPlayerLootPayload(state.generatedItems);
       const randomLootApi = game.modules.get("darkfinder")?.api;
       if (typeof randomLootApi?.openRandomLootClaimSession === "function") {
-        await randomLootApi.openRandomLootClaimSession(playerPayload, {
+        const session = await randomLootApi.openRandomLootClaimSession(playerPayload, {
           title: "Party Loot",
         });
+        state.activeLootSessionId = String(session?.id || "");
+        state.isClosingForLootSession = false;
+        startLootSessionWatcher(state, dialog);
         ui.notifications.info("Opened the loot claim session for all connected players.");
         return;
       }
@@ -320,6 +334,47 @@
       if (state.isGenerating) return;
       await openPartyWealthAuditDialog();
     });
+  }
+
+  function startLootSessionWatcher(state, dialog) {
+    stopLootSessionWatcher(state);
+    const sessionId = String(state.activeLootSessionId || "").trim();
+    if (!sessionId) return;
+
+    state.lootSessionWatcherId = window.setInterval(() => {
+      const activeSession = getActiveRandomLootSession();
+      if (activeSession?.id !== sessionId) {
+        state.activeLootSessionId = "";
+        state.isClosingForLootSession = true;
+        stopLootSessionWatcher(state);
+        if (dialog?.rendered) dialog.close();
+        return;
+      }
+
+      if (activeSession.status !== "collecting") {
+        state.activeLootSessionId = "";
+        state.isClosingForLootSession = true;
+        stopLootSessionWatcher(state);
+        if (dialog?.rendered) dialog.close();
+      }
+    }, 500);
+  }
+
+  function stopLootSessionWatcher(state) {
+    if (state.lootSessionWatcherId) {
+      window.clearInterval(state.lootSessionWatcherId);
+      state.lootSessionWatcherId = null;
+    }
+  }
+
+  function getActiveRandomLootSession() {
+    try {
+      const session = game.settings.get("darkfinder", "randomLootSession");
+      return session && typeof session === "object" ? session : {};
+    } catch (error) {
+      console.warn("Random Loot Generator could not read the active loot session.", error);
+      return {};
+    }
   }
 
   function renderState(eventRoot, state, wealthByLevel, options = {}) {
