@@ -12,13 +12,28 @@
   const MAX_REROLL_ITEMS = 8;
   const TARGET_TOLERANCE = 0.1;
   const CAP_RARITY_WEIGHT_STRENGTH = 1.5;
+  const CONSUMABLE_WAND_CHARGE_OPTIONS = [50, 40, 30, 20, 10];
+  const CONSUMABLE_CATEGORY_WEIGHTS = {
+    permanent: 1,
+    potion: 1.28,
+    scroll: 1.16,
+    wand: 1.12,
+  };
+  const HEALING_CATEGORY_WEIGHTS = {
+    potion: 2.8,
+    scroll: 1.7,
+    wand: 2.05,
+  };
+  const CONSUMABLE_REPEAT_DAMPING = 0.93;
+  const SAME_CONSUMABLE_TYPE_DAMPING = 0.86;
+  const SAME_CONSUMABLE_SPELL_DAMPING = 0.38;
   const TARGET_PACK_NAMES = [
     "gear/wonderous",
     "gear/wondrous",
     "equipment/magic items",
   ];
   const LOOT_CACHE_KEY = "__darkfinderRandomLootCache";
-  const LOOT_CACHE_VERSION = "v4";
+  const LOOT_CACHE_VERSION = "v5";
   const wealthTablePayload = {
     source: {
       label: "Pathfinder 1e Character Wealth by Level",
@@ -255,7 +270,8 @@
       if (!itemUuid) return;
 
       try {
-        const document = await fromUuid(itemUuid);
+        const clickedItem = state.generatedItems.find((item) => item.uuid === itemUuid) || null;
+        const document = await resolveLootItemDocument(clickedItem);
         if (!document?.sheet) {
           return ui.notifications.warn("That compendium item could not be opened.");
         }
@@ -437,13 +453,9 @@
     const maximumTarget = Math.ceil(targetBudget * (1 + TARGET_TOLERANCE));
 
     const packs = resolveLootCompendiumPacks();
-    if (!packs.length) {
-      throw new Error(`Could not find the target item compendiums: ${TARGET_PACK_NAMES.join(", ")}.`);
-    }
-
     const candidateItems = await loadLootCandidates(packs, maxSingleItemValue);
     if (!candidateItems.length) {
-      throw new Error(`No eligible compendium items were found at or below ${formatGold(maxSingleItemValue)} gp.`);
+      throw new Error(`No eligible loot candidates were found at or below ${formatGold(maxSingleItemValue)} gp.`);
     }
 
     const remainingCandidates = [...candidateItems];
@@ -457,6 +469,7 @@
       const choicePool = affordableCandidates.length ? affordableCandidates : remainingCandidates;
       const selectedCandidate = chooseWeightedRandomCandidate(choicePool, targetBudget - totalValue, {
         maxSingleItemValue,
+        selectedItems,
       });
       if (!selectedCandidate) break;
 
@@ -497,9 +510,6 @@
     const settings = buildGeneratedLootSettings(state, wealthByLevel);
     const maxSingleItemValue = settings.maxSingleItemValue;
     const packs = resolveLootCompendiumPacks();
-    if (!packs.length) {
-      throw new Error(`Could not find the target item compendiums: ${TARGET_PACK_NAMES.join(", ")}.`);
-    }
 
     const excludedUuids = new Set(state.generatedItems.map((item) => item.uuid));
     excludedUuids.delete(itemToReplace.uuid);
@@ -612,12 +622,15 @@
     return (items || []).map((item) => ({
       id: String(item?.id || ""),
       uuid: String(item?.uuid || ""),
+      sourceUuid: String(item?.sourceUuid || ""),
       name: String(item?.name || "Unnamed Item"),
       img: String(item?.img || "icons/svg/dice-target.svg"),
       price: Number(item?.price) || 0,
       description: String(item?.description || ""),
       typeLabel: String(item?.typeLabel || ""),
       quantity: Math.max(1, Number(item?.quantity) || 1),
+      sourceType: String(item?.sourceType || "permanent"),
+      generationSource: cloneGenerationSource(item?.generationSource),
       claimed: false,
     }));
   }
@@ -711,7 +724,8 @@
       if (!itemUuid) return;
 
       try {
-        const document = await fromUuid(itemUuid);
+        const clickedItem = state.items.find((item) => item.uuid === itemUuid) || null;
+        const document = await resolveLootItemDocument(clickedItem);
         if (!document?.sheet) {
           return ui.notifications.warn("That compendium item could not be opened.");
         }
@@ -982,6 +996,7 @@
       const affordableCandidates = remainingCandidates.filter((candidate) => candidate.price <= Math.max(0, maximumTarget - totalValue));
       const choicePool = affordableCandidates.length ? affordableCandidates : remainingCandidates;
       const selectedCandidate = chooseWeightedRandomCandidate(choicePool, targetBudget - totalValue, {
+        selectedItems,
         maxSingleItemValue: options.maxSingleItemValue,
         rerolledItemCounts: options.rerolledItemCounts,
       });
@@ -2282,16 +2297,24 @@
   }
 
   async function loadLootCandidates(packs, maxSingleItemValue) {
-    const allCandidates = await loadAllLootCandidates(packs);
-    return allCandidates
+    const [permanentCandidates, consumableCandidates] = await Promise.all([
+      loadAllLootCandidates(packs),
+      loadConsumableLootCandidates(maxSingleItemValue),
+    ]);
+
+    return [...permanentCandidates, ...consumableCandidates]
       .filter((candidate) => candidate.price <= maxSingleItemValue)
       .sort((left, right) => left.price - right.price);
   }
 
   function startLootPreload(packs) {
-    if (!packs?.length) return;
-    loadAllLootCandidates(packs).catch((error) => {
-      console.warn("Random Loot Generator preload failed.", error);
+    if (packs?.length) {
+      loadAllLootCandidates(packs).catch((error) => {
+        console.warn("Random Loot Generator preload failed.", error);
+      });
+    }
+    loadAllSpellDocuments().catch((error) => {
+      console.warn("Random Loot Generator spell preload failed.", error);
     });
   }
 
@@ -2322,12 +2345,15 @@
           return {
             id: String(document.id || ""),
             uuid: String(document.uuid || ""),
+            sourceUuid: String(document.uuid || ""),
             name: String(document.name || "Unnamed Item"),
             img: document.img || "icons/svg/dice-target.svg",
             price,
             description: extractItemDescription(document),
             typeLabel: extractItemTypeOrSlot(document),
             packCollection: String(pack.collection || ""),
+            sourceType: "permanent",
+            generationSource: null,
           };
         }).filter(Boolean);
       })
@@ -2345,11 +2371,230 @@
     return pendingLoad;
   }
 
+  async function loadConsumableLootCandidates(maxSingleItemValue) {
+    const cache = getLootCache();
+    const versionedCacheKey = `${LOOT_CACHE_VERSION}|consumables|cap:${Math.max(0, Math.floor(maxSingleItemValue || 0))}`;
+
+    if (cache.consumableCandidatesByKey.has(versionedCacheKey)) {
+      return cache.consumableCandidatesByKey.get(versionedCacheKey);
+    }
+
+    if (cache.consumablePromisesByKey.has(versionedCacheKey)) {
+      return cache.consumablePromisesByKey.get(versionedCacheKey);
+    }
+
+    const pendingLoad = buildConsumableLootCandidates(maxSingleItemValue).then((candidates) => {
+      cache.consumableCandidatesByKey.set(versionedCacheKey, candidates);
+      cache.consumablePromisesByKey.delete(versionedCacheKey);
+      return candidates;
+    }).catch((error) => {
+      cache.consumablePromisesByKey.delete(versionedCacheKey);
+      throw error;
+    });
+
+    cache.consumablePromisesByKey.set(versionedCacheKey, pendingLoad);
+    return pendingLoad;
+  }
+
+  async function buildConsumableLootCandidates(maxSingleItemValue) {
+    const spells = await loadAllSpellDocuments();
+    if (!spells.length) return [];
+
+    const modelTarget = resolveSpellConsumableModelTarget(spells[0]);
+    if (!modelTarget) {
+      console.warn("Random Loot Generator could not resolve the PF1 consumable conversion helper.");
+      return [];
+    }
+
+    const candidateSpecs = [];
+
+    for (const spell of spells) {
+      const spellData = spell?.toObject?.() || spell;
+      const [spellLevel, casterLevel] = getSpellMinimumLevelAndCasterLevel(modelTarget, spellData);
+      if (!(spellLevel >= 0) || !(casterLevel > 0)) continue;
+
+      const spellType = resolveConsumableSpellType(spellData);
+      const healing = isHealingSpell(spellData);
+
+      if (spellLevel <= 3 && isPotionEligibleSpell(spellData, spellLevel)) {
+        const potionPrice = getConsumablePriceFromModel(modelTarget, spellData, "potion", {
+          sl: spellLevel,
+          cl: casterLevel,
+        });
+        if (Number.isFinite(potionPrice) && potionPrice > 0 && potionPrice <= maxSingleItemValue) {
+          candidateSpecs.push({
+            spell,
+            spellLevel,
+            casterLevel,
+            spellType,
+            consumableType: "potion",
+            uses: 1,
+            healing,
+          });
+        }
+      }
+
+      const scrollPrice = getConsumablePriceFromModel(modelTarget, spellData, "scroll", {
+        sl: spellLevel,
+        cl: casterLevel,
+      });
+      if (Number.isFinite(scrollPrice) && scrollPrice > 0 && scrollPrice <= maxSingleItemValue) {
+        candidateSpecs.push({
+          spell,
+          spellLevel,
+          casterLevel,
+          spellType,
+          consumableType: "scroll",
+          uses: 1,
+          healing,
+        });
+      }
+
+      if (spellLevel <= 4) {
+        for (const uses of CONSUMABLE_WAND_CHARGE_OPTIONS) {
+          const wandPrice = getConsumablePriceFromModel(modelTarget, spellData, "wand", {
+            sl: spellLevel,
+            cl: casterLevel,
+            uses,
+          });
+          if (!Number.isFinite(wandPrice) || wandPrice <= 0 || wandPrice > maxSingleItemValue) continue;
+          candidateSpecs.push({
+            spell,
+            spellLevel,
+            casterLevel,
+            spellType,
+            consumableType: "wand",
+            uses,
+            healing,
+          });
+        }
+      }
+    }
+
+    const results = await Promise.all(candidateSpecs.map((spec) => createConsumableCandidateFromSpec(modelTarget, spec)));
+    return results.filter(Boolean).sort((left, right) => left.price - right.price);
+  }
+
+  async function createConsumableCandidateFromSpec(modelTarget, spec) {
+    const spell = spec?.spell;
+    if (!spell) return null;
+
+    const itemData = await modelTarget.toConsumable.call(modelTarget.owner, spell, spec.consumableType, {
+      spellType: spec.spellType,
+      sl: spec.spellLevel,
+      cl: spec.casterLevel,
+      uses: spec.uses,
+      identified: true,
+    });
+    if (!itemData) return null;
+
+    const price = extractItemPrice(itemData);
+    if (!Number.isFinite(price) || price <= 0) return null;
+
+    const spellUuid = String(spell?.uuid || "").trim();
+    const uses = spec.consumableType === "wand" ? Math.max(1, Number(spec.uses) || 50) : 1;
+
+    return {
+      id: buildSyntheticLootItemId(spec.consumableType, spellUuid, spec.spellLevel, spec.casterLevel, uses),
+      uuid: buildSyntheticLootItemUuid(spec.consumableType, spellUuid, spec.spellLevel, spec.casterLevel, uses),
+      sourceUuid: spellUuid,
+      sourceType: spec.consumableType,
+      name: String(itemData.name || `${toTitleCase(spec.consumableType)} of ${spell.name || "Spell"}`),
+      img: itemData.img || "icons/svg/dice-target.svg",
+      price,
+      description: extractItemDescription(itemData),
+      typeLabel: buildConsumableTypeLabel(spec.consumableType, uses),
+      quantity: 1,
+      isHealing: !!spec.healing,
+      generationSource: {
+        kind: "spell-consumable",
+        spellUuid,
+        consumableType: spec.consumableType,
+        spellLevel: spec.spellLevel,
+        casterLevel: spec.casterLevel,
+        uses,
+        spellType: spec.spellType,
+        identified: true,
+      },
+    };
+  }
+
+  async function loadAllSpellDocuments() {
+    const cache = getLootCache();
+    const cacheKey = `${LOOT_CACHE_VERSION}|all-spells`;
+
+    if (cache.spellDocumentsByKey.has(cacheKey)) {
+      return cache.spellDocumentsByKey.get(cacheKey);
+    }
+
+    if (cache.spellPromisesByKey.has(cacheKey)) {
+      return cache.spellPromisesByKey.get(cacheKey);
+    }
+
+    const pendingLoad = (async () => {
+      const worldSpells = (game.items?.contents || []).filter((item) => item?.type === "spell");
+      const spellPacks = resolveSpellCompendiumPacks();
+      const packResults = await Promise.all(spellPacks.map(async (pack) => {
+        const documents = await pack.getDocuments();
+        return documents.filter((document) => document?.type === "spell");
+      }));
+
+      const deduped = new Map();
+      for (const spell of [...worldSpells, ...packResults.flat()]) {
+        const key = String(spell?.uuid || "").trim();
+        if (!key || deduped.has(key)) continue;
+        deduped.set(key, spell);
+      }
+
+      const result = Array.from(deduped.values());
+      cache.spellDocumentsByKey.set(cacheKey, result);
+      cache.spellPromisesByKey.delete(cacheKey);
+      return result;
+    })().catch((error) => {
+      cache.spellPromisesByKey.delete(cacheKey);
+      throw error;
+    });
+
+    cache.spellPromisesByKey.set(cacheKey, pendingLoad);
+    return pendingLoad;
+  }
+
+  function resolveSpellCompendiumPacks() {
+    const matchedPacks = [];
+    const seenCollections = new Set();
+
+    const directPack = game.packs?.get("pf1.spells");
+    if (directPack?.collection) {
+      matchedPacks.push(directPack);
+      seenCollections.add(String(directPack.collection));
+    }
+
+    for (const pack of Array.from(game.packs || [])) {
+      if (String(pack?.documentName || "").trim() !== "Item") continue;
+
+      const collection = String(pack.collection || "").trim();
+      if (!collection || seenCollections.has(collection)) continue;
+
+      const normalizedCollection = normalizeText(collection);
+      const normalizedLabel = normalizeText(pack.metadata?.label || pack.title || "");
+      if (!normalizedCollection.includes("spell") && !normalizedLabel.includes("spell")) continue;
+
+      seenCollections.add(collection);
+      matchedPacks.push(pack);
+    }
+
+    return matchedPacks;
+  }
+
   function getLootCache() {
     if (!globalThis[LOOT_CACHE_KEY]) {
       globalThis[LOOT_CACHE_KEY] = {
         candidatesByKey: new Map(),
         promisesByKey: new Map(),
+        consumableCandidatesByKey: new Map(),
+        consumablePromisesByKey: new Map(),
+        spellDocumentsByKey: new Map(),
+        spellPromisesByKey: new Map(),
       };
     }
     return globalThis[LOOT_CACHE_KEY];
@@ -2574,9 +2819,11 @@
       const rarityPenalty = computeSingleItemCapRarityPenalty(candidate.price, options.maxSingleItemValue);
       const rerollCount = getRememberedRerollCount(options.rerolledItemCounts, candidate.uuid);
       const rerollPenalty = rerollCount > 0 ? Math.pow(0.15, rerollCount) : 1;
+      const categoryWeight = getCandidateCategoryWeight(candidate);
+      const repeatPenalty = getCandidateRepeatPenalty(candidate, options.selectedItems);
       return {
         candidate,
-        weight: Math.max(score * rarityPenalty * rerollPenalty, 0.0001),
+        weight: Math.max(score * rarityPenalty * rerollPenalty * categoryWeight * repeatPenalty, 0.0001),
       };
     });
 
@@ -2598,6 +2845,40 @@
 
     const ratio = clampNumber(safePrice / safeCap, 0, 1);
     return 1 / (1 + (ratio * CAP_RARITY_WEIGHT_STRENGTH));
+  }
+
+  function getCandidateCategoryWeight(candidate) {
+    const sourceType = normalizeText(candidate?.sourceType || "permanent");
+    let weight = Number(CONSUMABLE_CATEGORY_WEIGHTS[sourceType] || CONSUMABLE_CATEGORY_WEIGHTS.permanent || 1);
+
+    if (candidate?.isHealing && Object.prototype.hasOwnProperty.call(HEALING_CATEGORY_WEIGHTS, sourceType)) {
+      weight *= Number(HEALING_CATEGORY_WEIGHTS[sourceType] || 1);
+    }
+
+    if (sourceType === "wand") {
+      const uses = Math.max(1, Number(candidate?.generationSource?.uses) || 50);
+      weight *= 0.82 + (0.18 * Math.min(1, uses / 50));
+    }
+
+    return Math.max(weight, 0.0001);
+  }
+
+  function getCandidateRepeatPenalty(candidate, selectedItems = []) {
+    if (!isSpellConsumableCandidate(candidate)) return 1;
+
+    const consumableSelections = (selectedItems || []).filter((item) => isSpellConsumableCandidate(item));
+    const sameTypeSelections = consumableSelections.filter((item) => normalizeText(item?.sourceType) === normalizeText(candidate?.sourceType));
+    const sameSpellSelections = consumableSelections.filter((item) => {
+      return String(item?.generationSource?.spellUuid || "") === String(candidate?.generationSource?.spellUuid || "");
+    });
+
+    return Math.pow(CONSUMABLE_REPEAT_DAMPING, consumableSelections.length)
+      * Math.pow(SAME_CONSUMABLE_TYPE_DAMPING, sameTypeSelections.length)
+      * Math.pow(SAME_CONSUMABLE_SPELL_DAMPING, sameSpellSelections.length);
+  }
+
+  function isSpellConsumableCandidate(candidate) {
+    return String(candidate?.generationSource?.kind || "") === "spell-consumable";
   }
 
   function clampInteger(value, min, max) {
@@ -2750,6 +3031,9 @@
     if (!rawDescription) return "<p>No description available.</p>";
 
     return rawDescription
+      .replace(/@Embed\[([^\]\s]+)[^\]]*\]/g, (match, referencePath) => {
+        return escapeHtml(resolveTooltipReferenceLabel(`[${referencePath}]`));
+      })
       .replace(/@(?:UUID|Compendium|Draw)\[[^\]]+\](?:\{([^}]+)\})?/g, (match, label) => {
         const fallbackLabel = resolveTooltipReferenceLabel(match);
         return escapeHtml(String(label || fallbackLabel || "Reference"));
@@ -2821,8 +3105,217 @@
     };
   }
 
+  async function resolveLootItemDocument(item) {
+    const openUuid = getLootItemOpenUuid(item);
+    if (!openUuid) return null;
+    return fromUuid(openUuid);
+  }
+
+  function getLootItemOpenUuid(item) {
+    if (!item || typeof item !== "object") return "";
+    return String(item?.sourceUuid || item?.generationSource?.spellUuid || item?.uuid || "").trim();
+  }
+
   function normalizeText(value) {
     return String(value || "").trim().toLowerCase();
+  }
+
+  function cloneGenerationSource(source) {
+    if (!source || typeof source !== "object") return null;
+    return {
+      kind: String(source.kind || ""),
+      spellUuid: String(source.spellUuid || ""),
+      consumableType: String(source.consumableType || ""),
+      spellLevel: Number(source.spellLevel) || 0,
+      casterLevel: Number(source.casterLevel) || 0,
+      uses: Math.max(1, Number(source.uses) || 1),
+      spellType: String(source.spellType || "arcane"),
+      identified: source.identified !== false,
+    };
+  }
+
+  function resolveSpellConsumableModelTarget(spellDocument) {
+    const candidates = [
+      globalThis.pf1?.models?.item?.SpellModel,
+      spellDocument?.constructor,
+      globalThis.ItemSpellPF,
+    ];
+    const owner = candidates.find((candidate) => typeof candidate?.toConsumable === "function");
+    if (!owner) return null;
+    return {
+      owner,
+      toConsumable: owner.toConsumable,
+      getMinCLFromData: owner.getMinCLFromData || owner.getMinimumCasterLevelBySpellData,
+      getConsumablePrice: owner.getConsumablePrice || owner.getSpellPrice,
+    };
+  }
+
+  function getSpellMinimumLevelAndCasterLevel(modelTarget, spellData) {
+    const result = modelTarget?.getMinCLFromData?.call(modelTarget.owner, spellData);
+    if (Array.isArray(result) && result.length >= 2) {
+      return [Number(result[0]) || 0, Number(result[1]) || 1];
+    }
+    if (result && typeof result === "object") {
+      const spellLevel = Number(result.spellLevel ?? result.sl ?? result.level ?? result[0]);
+      const casterLevel = Number(result.casterLevel ?? result.cl ?? result.minimumCasterLevel ?? result[1]);
+      if (Number.isFinite(spellLevel) && Number.isFinite(casterLevel)) {
+        return [spellLevel, Math.max(1, casterLevel)];
+      }
+    }
+
+    const derived = deriveMinimumSpellLevelAndCasterLevelFromLearnedAt(spellData);
+    if (derived) return derived;
+
+    const fallbackLevel = Number(foundry.utils.getProperty(spellData, "system.level")) || 0;
+    return [fallbackLevel, Math.max(1, (fallbackLevel * 2) - 1)];
+  }
+
+  function getConsumablePriceFromModel(modelTarget, spellData, consumableType, overrides = {}) {
+    if (typeof modelTarget?.getConsumablePrice === "function") {
+      const helperPrice = Number(modelTarget.getConsumablePrice.call(modelTarget.owner, spellData, consumableType, overrides));
+      if (Number.isFinite(helperPrice) && helperPrice > 0) return helperPrice;
+    }
+
+    const spellLevel = Math.max(0.5, Number(overrides.sl) || 0);
+    const casterLevel = Math.max(1, Number(overrides.cl) || 1);
+    const uses = Math.max(1, Number(overrides.uses) || 50);
+    const materialCost = Math.max(0, Number(foundry.utils.getProperty(spellData, "system.materials.gpValue")) || 0);
+
+    let basePrice = NaN;
+    if (consumableType === "potion") basePrice = spellLevel * casterLevel * 50;
+    if (consumableType === "scroll") basePrice = spellLevel * casterLevel * 25;
+    if (consumableType === "wand") basePrice = spellLevel * casterLevel * 750 * (uses / 50);
+    if (!Number.isFinite(basePrice) || basePrice <= 0) return NaN;
+
+    const totalMaterialCost = consumableType === "wand" ? materialCost * uses : materialCost;
+    return roundGold(basePrice + totalMaterialCost);
+  }
+
+  function resolveConsumableSpellType(spellData) {
+    const learnedAtClasses = Object.keys(foundry.utils.getProperty(spellData, "system.learnedAt.class") || {});
+    const divineClassIds = new Set(["adept", "cleric", "druid", "hunter", "inquisitor", "oracle", "paladin", "ranger", "shaman", "warpriest"]);
+    if (learnedAtClasses.some((classId) => divineClassIds.has(normalizeText(classId)))) {
+      return "divine";
+    }
+    return "arcane";
+  }
+
+  function isPotionEligibleSpell(spellData, spellLevel) {
+    if (!(Number(spellLevel) >= 0 && Number(spellLevel) <= 3)) return false;
+    if (!hasPotionLegalCastingTime(spellData)) return false;
+    if (!hasPotionLegalTarget(spellData)) return false;
+    return true;
+  }
+
+  function hasPotionLegalCastingTime(spellData) {
+    const defaultAction = getPrimarySpellAction(spellData);
+    const activationType = normalizeText(defaultAction?.activation?.type);
+    if (!activationType) return false;
+
+    if (new Set(["free", "swift", "immediate", "move", "standard", "full", "attack", "aoo"]).has(activationType)) {
+      return true;
+    }
+
+    if (activationType === "round") {
+      const cost = Math.max(1, Number(defaultAction?.activation?.cost) || 1);
+      return cost < 10;
+    }
+
+    return false;
+  }
+
+  function hasPotionLegalTarget(spellData) {
+    const targetTexts = getSpellTargetTexts(spellData);
+    if (!targetTexts.length) return false;
+
+    const targetMatchers = ["creature", "creatures", "object", "objects"];
+    const disallowedMatchers = ["personal", "area", "burst", "cone", "line", "emanation", "spread", "radius"];
+
+    return targetTexts.some((targetText) => {
+      if (disallowedMatchers.some((value) => targetText.includes(value))) return false;
+      return targetMatchers.some((value) => targetText.includes(value));
+    });
+  }
+
+  function getPrimarySpellAction(spellData) {
+    const actions = Object.values(foundry.utils.getProperty(spellData, "system.actions") || {});
+    return [...actions].sort((left, right) => (Number(left?.sort) || 0) - (Number(right?.sort) || 0))[0] || null;
+  }
+
+  function getSpellTargetTexts(spellData) {
+    return Object.values(foundry.utils.getProperty(spellData, "system.actions") || {})
+      .sort((left, right) => (Number(left?.sort) || 0) - (Number(right?.sort) || 0))
+      .map((action) => normalizeText(action?.target?.value))
+      .filter(Boolean);
+  }
+
+  function isHealingSpell(spellData) {
+    if (normalizeText(foundry.utils.getProperty(spellData, "system.subschool")) === "healing") return true;
+
+    const actions = Object.values(foundry.utils.getProperty(spellData, "system.actions") || {});
+    if (actions.some((action) => normalizeText(action?.actionType) === "heal")) return true;
+
+    const spellName = normalizeText(spellData?.name);
+    return ["cure ", "mass cure", "heal", "healing", "restoration", "rejuvenat", "vigor"].some((term) => spellName.includes(term));
+  }
+
+  function buildSyntheticLootItemId(consumableType, spellUuid, spellLevel, casterLevel, uses) {
+    return `${consumableType}:${spellLevel}:${casterLevel}:${uses}:${spellUuid}`;
+  }
+
+  function buildSyntheticLootItemUuid(consumableType, spellUuid, spellLevel, casterLevel, uses) {
+    const spellKey = String(spellUuid || "").replace(/[^A-Za-z0-9._:-]+/g, "_");
+    return `Synthetic.RandomLoot.${consumableType}.${spellLevel}.${casterLevel}.${uses}.${spellKey}`;
+  }
+
+  function buildConsumableTypeLabel(consumableType, uses) {
+    if (consumableType === "wand") {
+      return `Wand • ${Math.max(1, Number(uses) || 50)} Charges`;
+    }
+    return toTitleCase(consumableType);
+  }
+
+  function deriveMinimumSpellLevelAndCasterLevelFromLearnedAt(spellData) {
+    const learnedAt = Object.entries(foundry.utils.getProperty(spellData, "system.learnedAt.class") || {});
+    if (!learnedAt.length) return null;
+
+    const pf1Config = globalThis.pf1?.config || CONFIG?.PF1 || {};
+    const casterTypes = pf1Config.classCasterType || {};
+    const progressionTables = pf1Config.casterProgression?.spellsPreparedPerDay?.prepared || {};
+
+    let spellLevel = Infinity;
+    let casterLevel = Infinity;
+
+    for (const [classId, levelValue] of learnedAt) {
+      const level = Number(levelValue);
+      if (!Number.isFinite(level) || level < 0) continue;
+
+      spellLevel = Math.min(spellLevel, level);
+
+      const casterType = String(casterTypes[classId] || "high");
+      const table = progressionTables[casterType];
+      const tableCl = Array.isArray(table)
+        ? table.findIndex((entry) => Array.isArray(entry) && entry.length === level + 1) + 1
+        : 0;
+
+      if (tableCl > 0) {
+        casterLevel = Math.min(casterLevel, tableCl);
+        continue;
+      }
+
+      const fallbackCl = computeFallbackCasterLevelFromSpellLevel(level, casterType);
+      casterLevel = Math.min(casterLevel, fallbackCl);
+    }
+
+    if (!Number.isFinite(spellLevel) || !Number.isFinite(casterLevel)) return null;
+    return [spellLevel, Math.max(1, casterLevel)];
+  }
+
+  function computeFallbackCasterLevelFromSpellLevel(spellLevel, casterType) {
+    const safeLevel = Math.max(0, Number(spellLevel) || 0);
+    if (casterType === "medium") return Math.max(1, (safeLevel * 3) - 1);
+    if (casterType === "low") return Math.max(1, (safeLevel * 3));
+    return Math.max(1, (safeLevel * 2) - 1);
   }
 
   function escapeHtml(value) {

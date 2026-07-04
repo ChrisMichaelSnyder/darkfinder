@@ -483,21 +483,49 @@ async function awardResolvedLoot(items, awardsByItemUuid) {
     const awards = Array.isArray(awardsByItemUuid?.[itemUuid]) ? awardsByItemUuid[itemUuid] : [];
     if (!itemUuid || !awards.length) continue;
 
-    const sourceDocument = await fromUuid(itemUuid);
-    if (!sourceDocument) continue;
-
     for (const award of awards) {
       const user = game.users.get(String(award?.userId || "").trim());
       const actor = resolveLootRecipientActor(user);
       if (!actor) continue;
 
       const quantity = Math.max(1, Number(award?.quantity) || 1);
-      const itemSource = sourceDocument.toObject();
-      delete itemSource._id;
-      applyItemQuantityToSource(itemSource, quantity);
+      const itemSource = await createAwardItemSource(item, quantity);
+      if (!itemSource) continue;
       await actor.createEmbeddedDocuments("Item", [itemSource]);
     }
   }
+}
+
+async function createAwardItemSource(item, quantity) {
+  if (String(item?.generationSource?.kind || "") === "spell-consumable") {
+    const spellUuid = String(item?.generationSource?.spellUuid || "").trim();
+    if (!spellUuid) return null;
+
+    const spell = await fromUuid(spellUuid);
+    const modelTarget = resolveSpellConsumableModelTarget(spell);
+    if (!spell || !modelTarget) return null;
+
+    const itemSource = await modelTarget.toConsumable.call(modelTarget.owner, spell, item.generationSource.consumableType, {
+      spellType: String(item?.generationSource?.spellType || "arcane"),
+      sl: Number(item?.generationSource?.spellLevel) || 0,
+      cl: Math.max(1, Number(item?.generationSource?.casterLevel) || 1),
+      uses: Math.max(1, Number(item?.generationSource?.uses) || 1),
+      identified: item?.generationSource?.identified !== false,
+    });
+    if (!itemSource) return null;
+
+    delete itemSource._id;
+    applyItemQuantityToSource(itemSource, quantity);
+    return itemSource;
+  }
+
+  const sourceDocument = await fromUuid(String(item?.uuid || "").trim());
+  if (!sourceDocument) return null;
+
+  const itemSource = sourceDocument.toObject();
+  delete itemSource._id;
+  applyItemQuantityToSource(itemSource, quantity);
+  return itemSource;
 }
 
 function applyItemQuantityToSource(source, quantity) {
@@ -796,7 +824,8 @@ function bindLootResultsDialogEvents(eventRoot, dialogState) {
     if (!itemUuid) return;
 
     try {
-      const document = await fromUuid(itemUuid);
+      const item = (dialogState.session?.items || []).find((entry) => String(entry?.uuid || "").trim() === itemUuid) || null;
+      const document = await resolveLootItemDocument(item);
       if (!document?.sheet) {
         return ui.notifications.warn("That compendium item could not be opened.");
       }
@@ -849,7 +878,8 @@ function bindLootSessionDialogEvents(eventRoot, dialogState) {
     if (!itemUuid) return;
 
     try {
-      const document = await fromUuid(itemUuid);
+      const item = (dialogState.session?.items || []).find((entry) => String(entry?.uuid || "").trim() === itemUuid) || null;
+      const document = await resolveLootItemDocument(item);
       if (!document?.sheet) {
         return ui.notifications.warn("That compendium item could not be opened.");
       }
@@ -1918,13 +1948,55 @@ function normalizeSessionItems(items) {
   return (items || []).map((item) => ({
     id: String(item?.id || ""),
     uuid: String(item?.uuid || ""),
+    sourceUuid: String(item?.sourceUuid || ""),
     name: String(item?.name || "Unnamed Item"),
     img: String(item?.img || "icons/svg/dice-target.svg"),
     price: Number(item?.price) || 0,
     description: String(item?.description || ""),
     typeLabel: String(item?.typeLabel || ""),
     quantity: Math.max(1, Number(item?.quantity) || 1),
+    sourceType: String(item?.sourceType || "permanent"),
+    generationSource: cloneGenerationSource(item?.generationSource),
   })).filter((item) => item.uuid && item.name);
+}
+
+function cloneGenerationSource(source) {
+  if (!source || typeof source !== "object") return null;
+  return {
+    kind: String(source.kind || ""),
+    spellUuid: String(source.spellUuid || ""),
+    consumableType: String(source.consumableType || ""),
+    spellLevel: Number(source.spellLevel) || 0,
+    casterLevel: Number(source.casterLevel) || 0,
+    uses: Math.max(1, Number(source.uses) || 1),
+    spellType: String(source.spellType || "arcane"),
+    identified: source.identified !== false,
+  };
+}
+
+async function resolveLootItemDocument(item) {
+  const openUuid = getLootItemOpenUuid(item);
+  if (!openUuid) return null;
+  return fromUuid(openUuid);
+}
+
+function getLootItemOpenUuid(item) {
+  if (!item || typeof item !== "object") return "";
+  return String(item?.sourceUuid || item?.generationSource?.spellUuid || item?.uuid || "").trim();
+}
+
+function resolveSpellConsumableModelTarget(spellDocument) {
+  const candidates = [
+    globalThis.pf1?.models?.item?.SpellModel,
+    spellDocument?.constructor,
+    globalThis.ItemSpellPF,
+  ];
+  const owner = candidates.find((candidate) => typeof candidate?.toConsumable === "function");
+  if (!owner) return null;
+  return {
+    owner,
+    toConsumable: owner.toConsumable,
+  };
 }
 
 function mergeAwardEntries(entries) {
@@ -2341,6 +2413,9 @@ function normalizeTooltipDescriptionMarkup(description) {
   if (!rawDescription) return "<p>No description available.</p>";
 
   return rawDescription
+    .replace(/@Embed\[([^\]\s]+)[^\]]*\]/g, (match, referencePath) => {
+      return escapeHtml(resolveTooltipReferenceLabel(`[${referencePath}]`));
+    })
     .replace(/@(?:UUID|Compendium|Draw)\[[^\]]+\](?:\{([^}]+)\})?/g, (match, label) => {
       const fallbackLabel = resolveTooltipReferenceLabel(match);
       return escapeHtml(String(label || fallbackLabel || "Reference"));
