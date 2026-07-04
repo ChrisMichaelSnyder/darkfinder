@@ -13,6 +13,8 @@ const lootSessionState = {
   dialogStateBySessionId: new Map(),
   resultsDialogStateBySessionId: new Map(),
   pendingSessionById: new Map(),
+  settingWatcherIntervalId: null,
+  lastObservedSessionSignature: "",
   hooksRegistered: false,
 };
 
@@ -31,6 +33,8 @@ function registerRandomLootSessionFeature(api) {
     Hooks.once("ready", () => {
       game.socket.on(SOCKET_NAME, handleSocketMessage);
       Hooks.on("updateSetting", handleLootSessionSettingUpdate);
+      startLootSessionSettingWatcher();
+      void syncLootSessionUiFromSetting(getStoredLootSession());
     });
 
     lootSessionState.hooksRegistered = true;
@@ -188,6 +192,20 @@ function handleLootSessionSettingUpdate(setting) {
   setTimeout(() => {
     void syncLootSessionUiFromSetting(getStoredLootSession());
   }, 0);
+}
+
+function startLootSessionSettingWatcher() {
+  if (lootSessionState.settingWatcherIntervalId) return;
+
+  lootSessionState.lastObservedSessionSignature = buildLootSessionSignature(getStoredLootSession());
+  lootSessionState.settingWatcherIntervalId = window.setInterval(() => {
+    const storedSession = getStoredLootSession();
+    const nextSignature = buildLootSessionSignature(storedSession);
+    if (nextSignature === lootSessionState.lastObservedSessionSignature) return;
+
+    lootSessionState.lastObservedSessionSignature = nextSignature;
+    void syncLootSessionUiFromSetting(storedSession);
+  }, 350);
 }
 
 async function applyClaimUpdate(message) {
@@ -1782,6 +1800,25 @@ function clearPendingLootSession(sessionId) {
 
 function normalizeSocketSession(session) {
   return session && typeof session === "object" ? session : null;
+}
+
+function buildLootSessionSignature(session) {
+  const normalizedSession = normalizeSocketSession(session);
+  if (!normalizedSession) return "";
+
+  return JSON.stringify({
+    id: String(normalizedSession.id || ""),
+    status: String(normalizedSession.status || ""),
+    gmUserId: String(normalizedSession.gmUserId || ""),
+    participantUserIds: [...(normalizedSession.participantUserIds || [])].map((userId) => String(userId || "")),
+    submittedUserIds: [...(normalizedSession.submittedUserIds || [])].map((userId) => String(userId || "")),
+    claimsByItemUuid: normalizedSession.claimsByItemUuid || {},
+    resolution: normalizedSession.resolution || {},
+    items: (normalizedSession.items || []).map((item) => ({
+      uuid: String(item?.uuid || ""),
+      quantity: Math.max(1, Number(item?.quantity) || 1),
+    })),
+  });
 }
 
 function resolveLootRecipientActor(user) {
