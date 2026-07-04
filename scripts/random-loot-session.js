@@ -30,6 +30,7 @@ function registerRandomLootSessionFeature(api) {
 
     Hooks.once("ready", () => {
       game.socket.on(SOCKET_NAME, handleSocketMessage);
+      Hooks.on("updateSetting", handleLootSessionSettingUpdate);
     });
 
     lootSessionState.hooksRegistered = true;
@@ -178,6 +179,15 @@ async function handleSocketMessage(message) {
       await openOrRefreshLootResultsDialog(sessionId, session);
     }
   }
+}
+
+function handleLootSessionSettingUpdate(setting) {
+  if (!isLootSessionSettingDocument(setting)) return;
+
+  // Let the client read the committed world-setting value after Foundry finishes applying it locally.
+  setTimeout(() => {
+    void syncLootSessionUiFromSetting(getStoredLootSession());
+  }, 0);
 }
 
 async function applyClaimUpdate(message) {
@@ -699,6 +709,44 @@ function closeLootResultsDialog(sessionId) {
   if (!state?.dialog) return;
   lootSessionState.resultsDialogStateBySessionId.delete(sessionId);
   state.dialog.close();
+}
+
+async function syncLootSessionUiFromSetting(session) {
+  const normalizedSession = normalizeSocketSession(session);
+  const sessionId = String(normalizedSession?.id || "").trim();
+
+  if (!sessionId) {
+    closeAllLootSessionDialogs();
+    closeAllLootResultsDialogs();
+    lootSessionState.pendingSessionById.clear();
+    return;
+  }
+
+  cachePendingLootSession(normalizedSession);
+  closeStaleLootSessionDialogs(sessionId);
+  closeStaleLootResultsDialogs(sessionId);
+
+  if (!sessionAppliesToCurrentUser(normalizedSession)) return;
+
+  if (normalizedSession.status === "cancelled") {
+    closeLootSessionDialog(sessionId);
+    closeLootResultsDialog(sessionId);
+    clearPendingLootSession(sessionId);
+    return;
+  }
+
+  if (normalizedSession.status === "resolved") {
+    closeLootSessionDialog(sessionId);
+    await openOrRefreshLootResultsDialog(sessionId, normalizedSession);
+    return;
+  }
+
+  if (normalizedSession.status === "resolving") {
+    closeLootSessionDialog(sessionId);
+    return;
+  }
+
+  await openOrRefreshLootSessionDialog(sessionId, normalizedSession);
 }
 
 function bindLootResultsDialogEvents(eventRoot, dialogState) {
@@ -1686,6 +1734,39 @@ function resolveSessionForClient(sessionId, fallbackSession = null) {
   }
 
   return lootSessionState.pendingSessionById.get(normalizedSessionId) || null;
+}
+
+function isLootSessionSettingDocument(setting) {
+  const namespace = String(setting?.namespace || "").trim();
+  const key = String(setting?.key || "").trim();
+  const compositeKey = String(setting?.id || "").trim();
+
+  if (namespace === MODULE_ID && key === SESSION_SETTING_KEY) return true;
+  return compositeKey === `${MODULE_ID}.${SESSION_SETTING_KEY}`;
+}
+
+function closeAllLootSessionDialogs() {
+  for (const sessionId of Array.from(lootSessionState.dialogStateBySessionId.keys())) {
+    closeLootSessionDialog(sessionId);
+  }
+}
+
+function closeAllLootResultsDialogs() {
+  for (const sessionId of Array.from(lootSessionState.resultsDialogStateBySessionId.keys())) {
+    closeLootResultsDialog(sessionId);
+  }
+}
+
+function closeStaleLootSessionDialogs(activeSessionId) {
+  for (const sessionId of Array.from(lootSessionState.dialogStateBySessionId.keys())) {
+    if (sessionId !== activeSessionId) closeLootSessionDialog(sessionId);
+  }
+}
+
+function closeStaleLootResultsDialogs(activeSessionId) {
+  for (const sessionId of Array.from(lootSessionState.resultsDialogStateBySessionId.keys())) {
+    if (sessionId !== activeSessionId) closeLootResultsDialog(sessionId);
+  }
 }
 
 function cachePendingLootSession(session) {
