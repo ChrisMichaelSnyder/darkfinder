@@ -474,7 +474,7 @@
       });
       if (!selectedCandidate) break;
 
-      const resolvedCandidate = resolveGeneratedLootCandidate(selectedCandidate, {
+      const resolvedCandidate = await resolveGeneratedLootCandidate(selectedCandidate, {
         selectedItems,
         maxAffordablePrice: Math.max(0, maximumTarget - totalValue),
         targetRemainingBudget: targetBudget - totalValue,
@@ -529,7 +529,7 @@
       throw new Error("No eligible replacement items were available for this reroll.");
     }
 
-    const rerolled = buildItemBundleForTarget(itemToReplace.price, candidateItems, {
+    const rerolled = await buildItemBundleForTarget(itemToReplace.price, candidateItems, {
       maxItems: MAX_REROLL_ITEMS,
       maxSingleItemValue,
       rerolledItemCounts: state.rerolledItemCounts,
@@ -990,7 +990,7 @@
     `;
   }
 
-  function buildItemBundleForTarget(targetBudget, candidates, options = {}) {
+  async function buildItemBundleForTarget(targetBudget, candidates, options = {}) {
     const maxItems = clampMinInteger(options.maxItems || 1, 1);
     const minimumTarget = Math.floor(targetBudget * (1 - TARGET_TOLERANCE));
     const maximumTarget = Math.ceil(targetBudget * (1 + TARGET_TOLERANCE));
@@ -1010,7 +1010,7 @@
       });
       if (!selectedCandidate) break;
 
-      const resolvedCandidate = resolveGeneratedLootCandidate(selectedCandidate, {
+      const resolvedCandidate = await resolveGeneratedLootCandidate(selectedCandidate, {
         selectedItems,
         maxAffordablePrice: Math.max(0, maximumTarget - totalValue),
         targetRemainingBudget: targetBudget - totalValue,
@@ -3344,13 +3344,13 @@
     return `Level ${spellLevel} ${toTitleCase(consumableType)}s`;
   }
 
-  function resolveGeneratedLootCandidate(candidate, options = {}) {
+  async function resolveGeneratedLootCandidate(candidate, options = {}) {
     if (!candidate) return null;
     if (!candidate.reusable || !Array.isArray(candidate.spellOptions)) return candidate;
     return materializeConsumableBucketCandidate(candidate, options);
   }
 
-  function materializeConsumableBucketCandidate(bucketCandidate, options = {}) {
+  async function materializeConsumableBucketCandidate(bucketCandidate, options = {}) {
     const selectedSpellUuids = new Set((options.selectedItems || [])
       .map((item) => String(item?.generationSource?.spellUuid || "").trim())
       .filter(Boolean));
@@ -3406,20 +3406,38 @@
     return safeEntries[safeEntries.length - 1]?.option || null;
   }
 
-  function createConsumableCandidateFromOption(bucketCandidate, option) {
+  async function createConsumableCandidateFromOption(bucketCandidate, option) {
     const spellUuid = String(option?.spellUuid || "").trim();
     if (!spellUuid) return null;
 
     const uses = Math.max(1, Number(option?.uses) || 1);
+    const spellDocument = await fromUuid(spellUuid);
+    const modelTarget = resolveSpellConsumableModelTarget(spellDocument);
+    if (!spellDocument || !modelTarget) return null;
+
+    const itemData = await modelTarget.toConsumable.call(modelTarget.owner, spellDocument, bucketCandidate.consumableType, {
+      spellType: String(option?.spellType || "arcane"),
+      sl: Number(option?.spellLevel) || 0,
+      cl: Math.max(1, Number(option?.casterLevel) || 1),
+      uses,
+      identified: true,
+    });
+    if (!itemData) return null;
+
+    const actualPrice = extractItemPrice(itemData);
+    const actualDescription = extractItemDescription(itemData);
+    const actualName = String(itemData.name || buildConsumableDisplayName(bucketCandidate.consumableType, option.spellName || "Spell"));
+    const actualImg = String(itemData.img || getConsumableDisplayIcon(bucketCandidate.consumableType));
+
     return {
       id: buildSyntheticLootItemId(bucketCandidate.consumableType, spellUuid, option.spellLevel, option.casterLevel, uses),
       uuid: buildSyntheticLootItemUuid(bucketCandidate.consumableType, spellUuid, option.spellLevel, option.casterLevel, uses),
       sourceUuid: spellUuid,
       sourceType: bucketCandidate.sourceType,
-      name: buildConsumableDisplayName(bucketCandidate.consumableType, option.spellName || "Spell"),
-      img: getConsumableDisplayIcon(bucketCandidate.consumableType),
-      price: Number(option.price) || 0,
-      description: String(option.description || ""),
+      name: actualName,
+      img: actualImg,
+      price: Number.isFinite(actualPrice) && actualPrice > 0 ? actualPrice : (Number(option.price) || 0),
+      description: actualDescription || String(option.description || ""),
       typeLabel: buildConsumableTypeLabel(bucketCandidate.consumableType, uses),
       quantity: 1,
       isHealing: !!option.isHealing,
