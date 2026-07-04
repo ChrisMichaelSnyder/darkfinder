@@ -13,16 +13,24 @@
   const TARGET_TOLERANCE = 0.1;
   const CAP_RARITY_WEIGHT_STRENGTH = 1.5;
   const CONSUMABLE_WAND_CHARGE_OPTIONS = [50, 40, 30, 20, 10];
+  const CONSUMABLE_STACK_SIZE_OPTIONS = [1, 2, 3, 4, 5];
   const CONSUMABLE_CATEGORY_WEIGHTS = {
     permanent: 1,
-    potion: 1.28,
-    scroll: 1.16,
-    wand: 1.12,
+    potion: 2.9,
+    scroll: 2.55,
+    wand: 1.85,
   };
   const HEALING_CATEGORY_WEIGHTS = {
     potion: 2.8,
     scroll: 1.7,
     wand: 2.05,
+  };
+  const CONSUMABLE_STACK_SIZE_WEIGHTS = {
+    1: 1,
+    2: 0.8,
+    3: 0.62,
+    4: 0.46,
+    5: 0.32,
   };
   const CATEGORY_COUNT_NORMALIZATION_POWER = 1;
   const CONSUMABLE_REPEAT_DAMPING = 0.93;
@@ -32,6 +40,14 @@
     "gear/wonderous",
     "gear/wondrous",
     "equipment/magic items",
+  ];
+  const LOOT_TYPE_FILTER_DEFINITIONS = [
+    { key: "coinsGemsArt", label: "Coins/Gems/Art" },
+    { key: "potion", label: "Potions" },
+    { key: "scroll", label: "Scrolls" },
+    { key: "wand", label: "Wands" },
+    { key: "armsArmor", label: "Arms/Armor" },
+    { key: "wondrous", label: "Wondrous" },
   ];
   const LOOT_CACHE_KEY = "__darkfinderRandomLootCache";
   const LOOT_CACHE_VERSION = "v5";
@@ -79,6 +95,7 @@
     percentOfWbl: 20,
     characterCount: defaultCharacterCount,
     maxItems: 10,
+    enabledLootTypes: buildDefaultEnabledLootTypes(),
     rerolledItemCounts: new Map(),
     generatedItems: [],
     generationStatus: "Choose your budget settings, then click Generate to build a loot list.",
@@ -202,6 +219,19 @@
       const input = event.currentTarget;
       const field = String(input.dataset.field || "").trim();
       setFieldValue(state, field, Number(input.value || 0));
+      renderState(eventRoot, state, wealthByLevel);
+    });
+
+    eventRoot.off("change", ".darkfinder-random-loot-filter-checkbox").on("change", ".darkfinder-random-loot-filter-checkbox", (event) => {
+      const checkbox = event.currentTarget;
+      const filterKey = String(checkbox.dataset.filterKey || "").trim();
+      if (!filterKey) return;
+
+      state.enabledLootTypes = {
+        ...buildDefaultEnabledLootTypes(),
+        ...(state.enabledLootTypes || {}),
+        [filterKey]: !!checkbox.checked,
+      };
       renderState(eventRoot, state, wealthByLevel);
     });
 
@@ -428,12 +458,18 @@
     const sendButton = eventRoot.find("[data-action='send-to-players']").first();
     const stepperButtons = eventRoot.find(".darkfinder-random-loot-stepper");
     const textInputs = eventRoot.find(".darkfinder-random-loot-input");
+    const filterCheckboxes = eventRoot.find(".darkfinder-random-loot-filter-checkbox");
     generateButton.prop("disabled", state.isGenerating);
     generateButton.text(state.isGenerating ? "Generating..." : "Generate");
     auditButton.prop("disabled", state.isGenerating);
     sendButton.prop("disabled", state.isGenerating || !state.generatedItems.length);
     stepperButtons.prop("disabled", state.isGenerating);
     textInputs.prop("disabled", state.isGenerating);
+    filterCheckboxes.prop("disabled", state.isGenerating);
+    for (const definition of LOOT_TYPE_FILTER_DEFINITIONS) {
+      eventRoot.find(`.darkfinder-random-loot-filter-checkbox[data-filter-key='${definition.key}']`)
+        .prop("checked", isLootTypeEnabled(state.enabledLootTypes, definition.key));
+    }
     hideItemTooltip(eventRoot);
 
     eventRoot.find("[data-value='results-status']").text(state.generationStatus || "");
@@ -454,7 +490,7 @@
     const maximumTarget = Math.ceil(targetBudget * (1 + TARGET_TOLERANCE));
 
     const packs = resolveLootCompendiumPacks();
-    const candidateItems = await loadLootCandidates(packs, maxSingleItemValue, settings.partyLevel);
+    const candidateItems = await loadLootCandidates(packs, maxSingleItemValue, settings.partyLevel, state.enabledLootTypes);
     if (!candidateItems.length) {
       throw new Error(`No eligible loot candidates were found at or below ${formatGold(maxSingleItemValue)} gp.`);
     }
@@ -466,7 +502,7 @@
     while (remainingCandidates.length && selectedItems.length < settings.maxItems) {
       if (totalValue >= minimumTarget && totalValue <= maximumTarget) break;
 
-      const affordableCandidates = remainingCandidates.filter((candidate) => candidate.price <= Math.max(0, maximumTarget - totalValue));
+      const affordableCandidates = remainingCandidates.filter((candidate) => getItemTotalPrice(candidate) <= Math.max(0, maximumTarget - totalValue));
       const choicePool = affordableCandidates.length ? affordableCandidates : remainingCandidates;
       const selectedCandidate = chooseWeightedRandomCandidate(choicePool, targetBudget - totalValue, {
         maxSingleItemValue,
@@ -485,7 +521,7 @@
       }
 
       selectedItems.push(resolvedCandidate);
-      totalValue += resolvedCandidate.price;
+      totalValue += getItemTotalPrice(resolvedCandidate);
 
       if (!selectedCandidate.reusable) {
         removeCandidateFromPool(remainingCandidates, selectedCandidate);
@@ -522,21 +558,21 @@
     const excludedUuids = new Set(state.generatedItems.map((item) => item.uuid));
     excludedUuids.delete(itemToReplace.uuid);
 
-    const candidateItems = (await loadLootCandidates(packs, maxSingleItemValue, settings.partyLevel))
+    const candidateItems = (await loadLootCandidates(packs, maxSingleItemValue, settings.partyLevel, state.enabledLootTypes))
       .filter((candidate) => !excludedUuids.has(candidate.uuid));
 
     if (!candidateItems.length) {
       throw new Error("No eligible replacement items were available for this reroll.");
     }
 
-    const rerolled = await buildItemBundleForTarget(itemToReplace.price, candidateItems, {
+    const rerolled = await buildItemBundleForTarget(getItemTotalPrice(itemToReplace), candidateItems, {
       maxItems: MAX_REROLL_ITEMS,
       maxSingleItemValue,
       rerolledItemCounts: state.rerolledItemCounts,
     });
 
     if (!rerolled.items.length) {
-      throw new Error(`Could not find a replacement bundle within +/-10% of ${formatGold(itemToReplace.price)} gp.`);
+      throw new Error(`Could not find a replacement bundle within +/-10% of ${formatGold(getItemTotalPrice(itemToReplace))} gp.`);
     }
 
     return rerolled.items;
@@ -583,9 +619,9 @@
         >
           <span class="darkfinder-random-loot-item-main">
             <img class="darkfinder-random-loot-item-icon" src="${escapeHtml(item.img || "icons/svg/dice-target.svg")}" alt="" loading="lazy" />
-            <span class="darkfinder-random-loot-item-name">${escapeHtml(item.name)}</span>
+            <span class="darkfinder-random-loot-item-name">${escapeHtml(buildDisplayItemName(item))}</span>
           </span>
-          <span class="darkfinder-random-loot-item-price">${formatGold(item.price)} gp</span>
+          <span class="darkfinder-random-loot-item-price">${formatGold(getItemTotalPrice(item))} gp</span>
         </div>
       </div>
     `).join("");
@@ -617,9 +653,9 @@
           >
             <span class="darkfinder-random-loot-item-main">
               <img class="darkfinder-random-loot-item-icon" src="${escapeHtml(item.img || "icons/svg/dice-target.svg")}" alt="" loading="lazy" />
-              <span class="darkfinder-random-loot-item-name">${escapeHtml(item.name)}</span>
+              <span class="darkfinder-random-loot-item-name">${escapeHtml(buildDisplayItemName(item))}</span>
             </span>
-            <span class="darkfinder-random-loot-item-price">${formatGold(item.price)} gp</span>
+            <span class="darkfinder-random-loot-item-price">${formatGold(getItemTotalPrice(item))} gp</span>
           </div>
         </div>
       `;
@@ -634,6 +670,7 @@
       name: String(item?.name || "Unnamed Item"),
       img: String(item?.img || "icons/svg/dice-target.svg"),
       price: Number(item?.price) || 0,
+      totalPrice: getItemTotalPrice(item),
       description: String(item?.description || ""),
       typeLabel: String(item?.typeLabel || ""),
       quantity: Math.max(1, Number(item?.quantity) || 1),
@@ -1001,7 +1038,7 @@
     while (remainingCandidates.length && selectedItems.length < maxItems) {
       if (totalValue >= minimumTarget && totalValue <= maximumTarget) break;
 
-      const affordableCandidates = remainingCandidates.filter((candidate) => candidate.price <= Math.max(0, maximumTarget - totalValue));
+      const affordableCandidates = remainingCandidates.filter((candidate) => getItemTotalPrice(candidate) <= Math.max(0, maximumTarget - totalValue));
       const choicePool = affordableCandidates.length ? affordableCandidates : remainingCandidates;
       const selectedCandidate = chooseWeightedRandomCandidate(choicePool, targetBudget - totalValue, {
         selectedItems,
@@ -1021,7 +1058,7 @@
       }
 
       selectedItems.push(resolvedCandidate);
-      totalValue += resolvedCandidate.price;
+      totalValue += getItemTotalPrice(resolvedCandidate);
 
       if (!selectedCandidate.reusable) {
         removeCandidateFromPool(remainingCandidates, selectedCandidate);
@@ -1377,6 +1414,37 @@
           font-size: 0.94rem;
           font-weight: 850;
           color: #2b2218;
+        }
+        .darkfinder-random-loot-filter-card {
+          grid-column: 1 / -1;
+        }
+        .darkfinder-random-loot-filter-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          grid-template-rows: repeat(3, auto);
+          grid-auto-flow: column;
+          gap: 0.45rem 0.7rem;
+        }
+        .darkfinder-random-loot-filter-option {
+          display: flex;
+          align-items: center;
+          gap: 0.45rem;
+          min-width: 0;
+          color: #2b2218;
+          font-size: 0.86rem;
+          font-weight: 750;
+        }
+        .darkfinder-random-loot-filter-checkbox {
+          width: 1rem;
+          height: 1rem;
+          margin: 0;
+          accent-color: #5f7346;
+          cursor: pointer;
+          flex: 0 0 auto;
+        }
+        .darkfinder-random-loot-filter-label {
+          min-width: 0;
+          line-height: 1.2;
         }
         .darkfinder-random-loot-stepper-row {
           display: grid;
@@ -1814,6 +1882,7 @@
               value: state.maxItems,
               step: 1,
             })}
+            ${buildLootTypeFilterCard(state.enabledLootTypes)}
           </div>
           <div class="darkfinder-random-loot-summary">
             <div class="darkfinder-random-loot-summary-label">Treasure Budget</div>
@@ -1897,6 +1966,29 @@
             data-delta="${escapeHtml(String(Math.abs(step)))}"
             aria-label="Increase ${escapeHtml(title)}"
           >+</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function buildLootTypeFilterCard(enabledLootTypes) {
+    return `
+      <div class="darkfinder-random-loot-card darkfinder-random-loot-filter-card">
+        <div class="darkfinder-random-loot-card-header">
+          <div class="darkfinder-random-loot-card-title">Item Type Filters</div>
+        </div>
+        <div class="darkfinder-random-loot-filter-grid">
+          ${LOOT_TYPE_FILTER_DEFINITIONS.map((definition) => `
+            <label class="darkfinder-random-loot-filter-option">
+              <input
+                type="checkbox"
+                class="darkfinder-random-loot-filter-checkbox"
+                data-filter-key="${escapeHtml(definition.key)}"
+                ${isLootTypeEnabled(enabledLootTypes, definition.key) ? "checked" : ""}
+              />
+              <span class="darkfinder-random-loot-filter-label">${escapeHtml(definition.label)}</span>
+            </label>
+          `).join("")}
         </div>
       </div>
     `;
@@ -2311,13 +2403,23 @@
     return pack?.folder?.name || pack?.metadata?.folder || pack?.folderName || "";
   }
 
-  async function loadLootCandidates(packs, maxSingleItemValue, partyLevel = 1) {
+  function classifyPermanentLootSourceType(pack) {
+    const folderName = normalizeText(getCompendiumFolderName(pack));
+    const label = normalizeText(pack?.metadata?.label || pack?.title || pack?.collection || "");
+    const combined = [folderName, label].filter(Boolean).join("/");
+    if (combined.includes("magic items")) return "armsArmor";
+    if (combined.includes("wonderous") || combined.includes("wondrous")) return "wondrous";
+    return "wondrous";
+  }
+
+  async function loadLootCandidates(packs, maxSingleItemValue, partyLevel = 1, enabledLootTypes = null) {
     const [permanentCandidates, consumableCandidates] = await Promise.all([
       loadAllLootCandidates(packs),
       loadConsumableLootCandidates(maxSingleItemValue, partyLevel),
     ]);
 
     return [...permanentCandidates, ...consumableCandidates]
+      .filter((candidate) => isLootTypeEnabled(enabledLootTypes, candidate?.sourceType))
       .filter((candidate) => candidate.price <= maxSingleItemValue)
       .sort((left, right) => left.price - right.price);
   }
@@ -2361,10 +2463,11 @@
             name: String(document.name || "Unnamed Item"),
             img: document.img || "icons/svg/dice-target.svg",
             price,
+            totalPrice: price,
             description: extractItemDescription(document),
             typeLabel: extractItemTypeOrSlot(document),
             packCollection: String(pack.collection || ""),
-            sourceType: "permanent",
+            sourceType: classifyPermanentLootSourceType(pack),
             generationSource: null,
           };
         }).filter(Boolean);
@@ -2424,7 +2527,7 @@
     for (const spell of spells) {
       const spellData = spell?.toObject?.() || spell;
       const [spellLevel, casterLevel] = getSpellMinimumLevelAndCasterLevel(modelTarget, spellData);
-      if (!(spellLevel >= 0) || !(casterLevel > 0)) continue;
+      if (!(spellLevel > 0) || !(casterLevel > 0)) continue;
       if (spellLevel > maxAllowedSpellLevel) continue;
 
       const spellType = resolveConsumableSpellType(spellData);
@@ -2435,17 +2538,21 @@
           sl: spellLevel,
           cl: casterLevel,
         });
-        if (Number.isFinite(potionPrice) && potionPrice > 0 && potionPrice <= maxSingleItemValue) {
-          addSpellOptionToConsumableBucket(bucketsByKey, {
-            spell,
-            spellLevel,
-            casterLevel,
-            spellType,
-            consumableType: "potion",
-            uses: 1,
-            healing,
-            price: potionPrice,
-          });
+        if (Number.isFinite(potionPrice) && potionPrice > 0) {
+          for (const stackSize of CONSUMABLE_STACK_SIZE_OPTIONS) {
+            if ((potionPrice * stackSize) > maxSingleItemValue) break;
+            addSpellOptionToConsumableBucket(bucketsByKey, {
+              spell,
+              spellLevel,
+              casterLevel,
+              spellType,
+              consumableType: "potion",
+              uses: 1,
+              stackSize,
+              healing,
+              unitPrice: potionPrice,
+            });
+          }
         }
       }
 
@@ -2453,17 +2560,21 @@
         sl: spellLevel,
         cl: casterLevel,
       });
-      if (Number.isFinite(scrollPrice) && scrollPrice > 0 && scrollPrice <= maxSingleItemValue) {
-        addSpellOptionToConsumableBucket(bucketsByKey, {
-          spell,
-          spellLevel,
-          casterLevel,
-          spellType,
-          consumableType: "scroll",
-          uses: 1,
-          healing,
-          price: scrollPrice,
-        });
+      if (Number.isFinite(scrollPrice) && scrollPrice > 0) {
+        for (const stackSize of CONSUMABLE_STACK_SIZE_OPTIONS) {
+          if ((scrollPrice * stackSize) > maxSingleItemValue) break;
+          addSpellOptionToConsumableBucket(bucketsByKey, {
+            spell,
+            spellLevel,
+            casterLevel,
+            spellType,
+            consumableType: "scroll",
+            uses: 1,
+            stackSize,
+            healing,
+            unitPrice: scrollPrice,
+          });
+        }
       }
 
       if (spellLevel <= Math.min(4, maxAllowedSpellLevel)) {
@@ -2482,7 +2593,8 @@
             consumableType: "wand",
             uses,
             healing,
-            price: wandPrice,
+            stackSize: 1,
+            unitPrice: wandPrice,
           });
         }
       }
@@ -2495,7 +2607,7 @@
   }
 
   function addSpellOptionToConsumableBucket(bucketsByKey, spec) {
-    const bucketKey = buildConsumableBucketKey(spec.consumableType, spec.spellLevel, spec.uses);
+    const bucketKey = buildConsumableBucketKey(spec.consumableType, spec.spellLevel, spec.uses, spec.stackSize);
     if (!bucketsByKey.has(bucketKey)) {
       bucketsByKey.set(bucketKey, {
         key: bucketKey,
@@ -2503,6 +2615,7 @@
         consumableType: spec.consumableType,
         spellLevel: spec.spellLevel,
         uses: spec.uses,
+        stackSize: Math.max(1, Number(spec.stackSize) || 1),
         spellOptions: [],
       });
     }
@@ -2516,11 +2629,13 @@
       spellUuid,
       spellName: String(spec.spell?.name || "Spell"),
       description: extractItemDescription(spellData),
-      price: Number(spec.price) || 0,
+      price: (Number(spec.unitPrice) || 0) * Math.max(1, Number(spec.stackSize) || 1),
+      unitPrice: Number(spec.unitPrice) || 0,
       spellLevel: spec.spellLevel,
       casterLevel: spec.casterLevel,
       spellType: spec.spellType,
       uses: spec.uses,
+      stackSize: Math.max(1, Number(spec.stackSize) || 1),
       isHealing: !!spec.healing,
     });
   }
@@ -2545,17 +2660,19 @@
       sourceUuid: "",
       sourceType: bucket.sourceType,
       consumableType: bucket.consumableType,
-      name: buildConsumableBucketDisplayName(bucket.consumableType, bucket.spellLevel, bucket.uses),
+      name: buildConsumableBucketDisplayName(bucket.consumableType, bucket.spellLevel, bucket.uses, bucket.stackSize),
       img: getConsumableDisplayIcon(bucket.consumableType),
       price: representativePrice,
+      totalPrice: representativePrice,
       description: `${spellOptions.length} possible spell(s)`,
       typeLabel: buildConsumableTypeLabel(bucket.consumableType, bucket.uses),
-      quantity: 1,
+      quantity: Math.max(1, Number(bucket.stackSize) || 1),
       isHealing: healingCount > 0,
       bucketKey: bucket.key,
       bucketType: bucket.consumableType,
       bucketSpellLevel: bucket.spellLevel,
       bucketUses: bucket.uses,
+      bucketStackSize: Math.max(1, Number(bucket.stackSize) || 1),
       spellOptions,
       generationSource: null,
       reusable: true,
@@ -2862,9 +2979,10 @@
     }, {});
 
     const weightedEntries = safeCandidates.map((candidate) => {
-      const delta = Math.abs((Number(remainingBudget) || 0) - candidate.price);
+      const candidateTotalPrice = getItemTotalPrice(candidate);
+      const delta = Math.abs((Number(remainingBudget) || 0) - candidateTotalPrice);
       const score = 1 / (1 + delta);
-      const rarityPenalty = computeSingleItemCapRarityPenalty(candidate.price, options.maxSingleItemValue);
+      const rarityPenalty = computeSingleItemCapRarityPenalty(candidateTotalPrice, options.maxSingleItemValue);
       const rerollCount = getRememberedRerollCount(options.rerolledItemCounts, candidate.uuid);
       const rerollPenalty = rerollCount > 0 ? Math.pow(0.15, rerollCount) : 1;
       const categoryWeight = getCandidateCategoryWeight(candidate, categoryCounts);
@@ -2900,6 +3018,7 @@
     let weight = Number(CONSUMABLE_CATEGORY_WEIGHTS[sourceType] || CONSUMABLE_CATEGORY_WEIGHTS.permanent || 1);
     const categoryCount = Math.max(1, Number(categoryCounts?.[sourceType]) || 1);
     weight /= Math.pow(categoryCount, CATEGORY_COUNT_NORMALIZATION_POWER);
+    weight *= Number(CONSUMABLE_STACK_SIZE_WEIGHTS[Math.max(1, Number(candidate?.quantity) || 1)] || 1);
 
     if (candidate?.isHealing && Object.prototype.hasOwnProperty.call(HEALING_CATEGORY_WEIGHTS, sourceType)) {
       weight *= Number(HEALING_CATEGORY_WEIGHTS[sourceType] || 1);
@@ -2986,13 +3105,25 @@
     `;
   }
 
+  function getItemTotalPrice(item) {
+    const explicitTotal = Number(item?.totalPrice);
+    if (Number.isFinite(explicitTotal) && explicitTotal > 0) return explicitTotal;
+    return (Number(item?.price) || 0) * Math.max(1, Number(item?.quantity) || 1);
+  }
+
+  function buildDisplayItemName(item) {
+    const quantity = Math.max(1, Number(item?.quantity) || 1);
+    const baseName = String(item?.name || "Unnamed Item").replace(/^\d+x\s+/i, "");
+    return quantity > 1 ? `${quantity}x ${baseName}` : baseName;
+  }
+
   function sumItemPrices(items) {
-    return (items || []).reduce((sum, item) => sum + (Number(item?.price) || 0), 0);
+    return (items || []).reduce((sum, item) => sum + getItemTotalPrice(item), 0);
   }
 
   function sortItemsByPriceDesc(items) {
     return [...(items || [])].sort((left, right) => {
-      const priceDelta = (Number(right?.price) || 0) - (Number(left?.price) || 0);
+      const priceDelta = getItemTotalPrice(right) - getItemTotalPrice(left);
       if (priceDelta !== 0) return priceDelta;
       return String(left?.name || "").localeCompare(String(right?.name || ""), undefined, { sensitivity: "base" });
     });
@@ -3074,8 +3205,8 @@
       : "";
 
     return `
-      <div class="darkfinder-random-loot-tooltip-title">${escapeHtml(item?.name || "Unnamed Item")}</div>
-      <div class="darkfinder-random-loot-tooltip-price">${formatGold(item?.price)} gp</div>
+      <div class="darkfinder-random-loot-tooltip-title">${escapeHtml(buildDisplayItemName(item))}</div>
+      <div class="darkfinder-random-loot-tooltip-price">${formatGold(getItemTotalPrice(item))} gp</div>
       ${typeOrSlotHtml}
       <div class="darkfinder-random-loot-tooltip-description">${descriptionHtml}</div>
     `;
@@ -3173,6 +3304,20 @@
 
   function normalizeText(value) {
     return String(value || "").trim().toLowerCase();
+  }
+
+  function buildDefaultEnabledLootTypes() {
+    return Object.fromEntries(LOOT_TYPE_FILTER_DEFINITIONS.map((definition) => [definition.key, true]));
+  }
+
+  function isLootTypeEnabled(enabledLootTypes, lootTypeKey) {
+    const normalizedKey = String(lootTypeKey || "").trim();
+    if (!normalizedKey) return false;
+    const mergedFilters = {
+      ...buildDefaultEnabledLootTypes(),
+      ...(enabledLootTypes || {}),
+    };
+    return mergedFilters[normalizedKey] !== false;
   }
 
   function cloneGenerationSource(source) {
@@ -3275,7 +3420,7 @@
   }
 
   function isPotionEligibleSpell(spellData, spellLevel) {
-    if (!(Number(spellLevel) >= 0 && Number(spellLevel) <= 3)) return false;
+    if (!(Number(spellLevel) > 0 && Number(spellLevel) <= 3)) return false;
     if (!hasPotionLegalCastingTime(spellData)) return false;
     if (!hasPotionLegalTarget(spellData)) return false;
     return true;
@@ -3453,6 +3598,7 @@
     if (!spellUuid) return null;
 
     const uses = Math.max(1, Number(option?.uses) || 1);
+    const quantity = Math.max(1, Number(option?.stackSize || bucketCandidate?.bucketStackSize || bucketCandidate?.quantity) || 1);
     const consumableType = String(
       bucketCandidate?.consumableType
       || bucketCandidate?.bucketType
@@ -3478,8 +3624,18 @@
 
     const actualPrice = extractItemPrice(itemData);
     const actualDescription = extractItemDescription(itemData);
-    const actualName = String(itemData.name || buildConsumableDisplayName(bucketCandidate.consumableType, option.spellName || "Spell"));
-    const actualImg = String(itemData.img || getConsumableDisplayIcon(bucketCandidate.consumableType));
+    const unitPrice = Number.isFinite(actualPrice) && actualPrice > 0
+      ? actualPrice
+      : (Number(option?.unitPrice) || Number(option?.price) || 0);
+    const actualName = buildConsumableDisplayName(
+      consumableType,
+      String(itemData.name || option.spellName || "Spell"),
+      {
+        uses,
+        quantity,
+      }
+    );
+    const actualImg = String(itemData.img || getConsumableDisplayIcon(consumableType));
 
     return {
       id: buildSyntheticLootItemId(consumableType, spellUuid, option.spellLevel, option.casterLevel, uses),
@@ -3488,10 +3644,11 @@
       sourceType: bucketCandidate.sourceType,
       name: actualName,
       img: actualImg,
-      price: Number.isFinite(actualPrice) && actualPrice > 0 ? actualPrice : (Number(option.price) || 0),
+      price: unitPrice,
+      totalPrice: unitPrice * quantity,
       description: actualDescription || String(option.description || ""),
       typeLabel: buildConsumableTypeLabel(consumableType, uses),
-      quantity: 1,
+      quantity,
       isHealing: !!option.isHealing,
       generationSource: {
         kind: "spell-consumable",
@@ -3513,12 +3670,25 @@
     }
   }
 
-  function buildConsumableDisplayName(consumableType, spellName) {
-    const safeSpellName = String(spellName || "Spell").trim() || "Spell";
-    if (consumableType === "potion") return `Potion of ${safeSpellName}`;
-    if (consumableType === "scroll") return `Scroll of ${safeSpellName}`;
-    if (consumableType === "wand") return `Wand of ${safeSpellName}`;
-    return `${toTitleCase(consumableType)} of ${safeSpellName}`;
+  function buildConsumableDisplayName(consumableType, spellName, options = {}) {
+    const quantity = Math.max(1, Number(options.quantity) || 1);
+    const uses = Math.max(1, Number(options.uses) || 1);
+    let safeSpellName = String(spellName || "Spell").trim() || "Spell";
+    safeSpellName = safeSpellName
+      .replace(/^\d+x\s+/i, "")
+      .replace(/^(?:potion|scroll|wand)\s+of\s+/i, "")
+      .replace(/\s+\(\d+\s+charges\)$/i, "");
+
+    let baseName = `${toTitleCase(consumableType)} of ${safeSpellName}`;
+    if (consumableType === "wand") {
+      baseName = `Wand of ${safeSpellName} (${uses} charges)`;
+    } else if (consumableType === "potion") {
+      baseName = `Potion of ${safeSpellName}`;
+    } else if (consumableType === "scroll") {
+      baseName = `Scroll of ${safeSpellName}`;
+    }
+
+    return quantity > 1 ? `${quantity}x ${baseName}` : baseName;
   }
 
   function getConsumableDisplayIcon(consumableType) {
@@ -3531,6 +3701,25 @@
   function getMaximumConsumableSpellLevelForPartyLevel(partyLevel) {
     const safePartyLevel = clampMinInteger(partyLevel, 1);
     return Math.max(0, Math.floor(safePartyLevel / 2) + 1);
+  }
+
+  function buildConsumableTypeLabel(consumableType, uses) {
+    if (consumableType === "wand") {
+      return `Wand (${Math.max(1, Number(uses) || 50)} Charges)`;
+    }
+    return toTitleCase(consumableType);
+  }
+
+  function buildConsumableBucketKey(consumableType, spellLevel, uses, stackSize = 1) {
+    return `${consumableType}:${spellLevel}:${Math.max(1, Number(uses) || 1)}:${Math.max(1, Number(stackSize) || 1)}`;
+  }
+
+  function buildConsumableBucketDisplayName(consumableType, spellLevel, uses, stackSize = 1) {
+    if (consumableType === "wand") {
+      return `Level ${spellLevel} Wands (${Math.max(1, Number(uses) || 50)} Charges)`;
+    }
+    const quantityPrefix = Math.max(1, Number(stackSize) || 1) > 1 ? `${Math.max(1, Number(stackSize) || 1)}x ` : "";
+    return `${quantityPrefix}Level ${spellLevel} ${toTitleCase(consumableType)}s`;
   }
 
   function deriveMinimumSpellLevelAndCasterLevelFromLearnedAt(spellData) {

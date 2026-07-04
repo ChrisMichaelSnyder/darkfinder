@@ -1251,15 +1251,14 @@ function buildLootResultsRowsHtml(session) {
         <div class="darkfinder-random-loot-results-dialog-name">${escapeHtml(characterName)}</div>
         <div class="darkfinder-random-loot-results-dialog-awards">
           ${awards.length ? awards.map((item) => {
-            const quantityLabel = item.awardQuantity > 1 ? ` x${item.awardQuantity}` : "";
             return `
               <div class="darkfinder-random-loot-item-row">
                 <div class="darkfinder-random-loot-item-body" data-item-uuid="${escapeHtml(item.uuid)}">
                   <span class="darkfinder-random-loot-item-main">
                     <img class="darkfinder-random-loot-item-icon" src="${escapeHtml(item.img || "icons/svg/dice-target.svg")}" alt="" loading="lazy" />
-                    <span class="darkfinder-random-loot-item-name">${escapeHtml(item.name)}${escapeHtml(quantityLabel)}</span>
+                    <span class="darkfinder-random-loot-item-name">${escapeHtml(buildDisplayItemName({ ...item, quantity: item.awardQuantity }))}</span>
                   </span>
-                  <span class="darkfinder-random-loot-item-price">${formatGold(item.price)} gp</span>
+                  <span class="darkfinder-random-loot-item-price">${formatGold(getItemTotalPrice({ ...item, quantity: item.awardQuantity }))} gp</span>
                 </div>
               </div>
             `;
@@ -1669,7 +1668,6 @@ function buildLootSessionItemsHtml(session, role) {
       ? claimantIds.includes(game.user.id)
       : getCurrentUserClaimedItemUuids(session.id).has(item.uuid);
     const quantity = Math.max(1, Number(item?.quantity) || 1);
-    const quantityLabel = quantity > 1 ? ` x${quantity}` : "";
     const dividerMarkup = role === "gm"
       ? ""
       : `<span class="darkfinder-random-loot-player-item-divider" aria-hidden="true"></span>`;
@@ -1699,9 +1697,9 @@ function buildLootSessionItemsHtml(session, role) {
         >
           <span class="darkfinder-random-loot-item-main">
             <img class="darkfinder-random-loot-item-icon" src="${escapeHtml(item.img || "icons/svg/dice-target.svg")}" alt="" loading="lazy" />
-            <span class="darkfinder-random-loot-item-name">${escapeHtml(item.name)}${escapeHtml(quantityLabel)}</span>
+            <span class="darkfinder-random-loot-item-name">${escapeHtml(buildDisplayItemName(item))}</span>
           </span>
-          <span class="darkfinder-random-loot-item-price">${formatGold(item.price)} gp</span>
+          <span class="darkfinder-random-loot-item-price">${formatGold(getItemTotalPrice(item))} gp</span>
         </div>
       </div>
     `;
@@ -1952,6 +1950,7 @@ function normalizeSessionItems(items) {
     name: String(item?.name || "Unnamed Item"),
     img: String(item?.img || "icons/svg/dice-target.svg"),
     price: Number(item?.price) || 0,
+    totalPrice: Number(item?.totalPrice) || 0,
     description: String(item?.description || ""),
     typeLabel: String(item?.typeLabel || ""),
     quantity: Math.max(1, Number(item?.quantity) || 1),
@@ -2480,7 +2479,19 @@ function resolveTooltipDocumentName(referencePath) {
 }
 
 function sumItemPrices(items) {
-  return (items || []).reduce((sum, item) => sum + ((Number(item?.price) || 0) * Math.max(1, Number(item?.quantity) || 1)), 0);
+  return (items || []).reduce((sum, item) => sum + getItemTotalPrice(item), 0);
+}
+
+function getItemTotalPrice(item) {
+  const explicitTotal = Number(item?.totalPrice);
+  if (Number.isFinite(explicitTotal) && explicitTotal > 0) return explicitTotal;
+  return (Number(item?.price) || 0) * Math.max(1, Number(item?.quantity) || 1);
+}
+
+function buildDisplayItemName(item) {
+  const quantity = Math.max(1, Number(item?.quantity) || 1);
+  const baseName = String(item?.name || "Unnamed Item").replace(/^\d+x\s+/i, "");
+  return quantity > 1 ? `${quantity}x ${baseName}` : baseName;
 }
 
 function formatGold(value) {
