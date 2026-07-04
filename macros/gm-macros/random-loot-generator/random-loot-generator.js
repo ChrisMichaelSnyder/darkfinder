@@ -24,9 +24,9 @@
     wand: 1.85,
   };
   const HEALING_CATEGORY_WEIGHTS = {
-    potion: 2.8,
-    scroll: 1.7,
-    wand: 2.05,
+    potion: 3.6,
+    scroll: 2.05,
+    wand: 2.35,
   };
   const CONSUMABLE_STACK_SIZE_WEIGHTS = {
     1: 1,
@@ -1721,7 +1721,12 @@
           margin-top: 0.25rem;
         }
         .darkfinder-random-loot-type-header {
-          padding: 0 0.2rem;
+          display: flex;
+          align-items: center;
+          gap: 0.55rem;
+          width: 100%;
+          padding: 0 0.2rem 0.2rem;
+          border-bottom: 1px solid rgba(124, 103, 79, 0.38);
           color: #6a5a48;
           font-size: 0.76rem;
           font-weight: 900;
@@ -2902,6 +2907,12 @@
   }
 
   function extractItemTypeOrSlot(document) {
+    const documentType = normalizeText(document?.type || "");
+    if (new Set(["weapon", "equipment", "armor"]).has(documentType)) {
+      const baseTypeLabel = extractEquipmentBaseTypeLabel(document);
+      if (baseTypeLabel) return baseTypeLabel;
+    }
+
     const typeCandidates = [
       foundry.utils.getProperty(document, "system.equipmentType"),
       foundry.utils.getProperty(document, "system.equipmentType.value"),
@@ -2940,6 +2951,63 @@
     }
 
     return typeLabel;
+  }
+
+  function extractEquipmentBaseTypeLabel(document) {
+    const candidates = [
+      foundry.utils.getProperty(document, "system.equipmentBaseTypes"),
+      foundry.utils.getProperty(document, "system.equipmentBaseTypes.value"),
+      foundry.utils.getProperty(document, "system.baseTypes"),
+      foundry.utils.getProperty(document, "system.baseTypes.value"),
+      foundry.utils.getProperty(document, "system.baseType"),
+      foundry.utils.getProperty(document, "system.baseType.value"),
+      foundry.utils.getProperty(document, "system.weaponData.baseTypes"),
+      foundry.utils.getProperty(document, "system.weaponData.baseType"),
+      foundry.utils.getProperty(document, "system.armor.baseTypes"),
+      foundry.utils.getProperty(document, "system.armor.baseType"),
+    ];
+
+    for (const candidate of candidates) {
+      const label = extractFirstEquipmentBaseTypeValue(candidate);
+      if (label) return label;
+    }
+
+    return "";
+  }
+
+  function extractFirstEquipmentBaseTypeValue(value) {
+    if (typeof value === "string") {
+      return normalizeTooltipMetaValue(value, { includeSlotField: false });
+    }
+
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        const label = extractFirstEquipmentBaseTypeValue(entry);
+        if (label) return label;
+      }
+      return "";
+    }
+
+    if (value && typeof value === "object") {
+      const prioritizedCandidates = [
+        value.value,
+        value.label,
+        value.name,
+        value.type,
+      ];
+
+      for (const candidate of prioritizedCandidates) {
+        const label = extractFirstEquipmentBaseTypeValue(candidate);
+        if (label) return label;
+      }
+
+      for (const nestedValue of Object.values(value)) {
+        const label = extractFirstEquipmentBaseTypeValue(nestedValue);
+        if (label) return label;
+      }
+    }
+
+    return "";
   }
 
   function getFirstTooltipMetaValue(candidates, options = {}) {
@@ -3324,7 +3392,7 @@
         return `${amount.toLocaleString("en-US")}${denomination.key}`;
       })
       .filter(Boolean)
-      .join(" ");
+      .join("\u00A0\u00A0\u00A0");
   }
 
   function cloneCurrencyBreakdown(breakdown) {
@@ -3704,7 +3772,22 @@
     if (actions.some((action) => normalizeText(action?.actionType) === "heal")) return true;
 
     const spellName = normalizeText(spellData?.name);
-    return ["cure ", "mass cure", "heal", "healing", "restoration", "rejuvenat", "vigor"].some((term) => spellName.includes(term));
+    return ["cure ", "mass cure", "remove ", "heal", "healing", "restoration", "rejuvenat", "vigor"].some((term) => spellName.includes(term));
+  }
+
+  function getConsumableSpellPreferenceWeight(option, sourceType) {
+    const normalizedType = normalizeText(sourceType);
+    const spellName = normalizeText(option?.spellName || "");
+
+    if (normalizedType === "potion") {
+      return (spellName.includes("cure") || spellName.includes("remove")) ? 1.5 : 1;
+    }
+
+    if (new Set(["scroll", "wand"]).has(normalizedType)) {
+      return option?.isHealing ? 1.2 : 1;
+    }
+
+    return 1;
   }
 
   function buildSyntheticLootItemId(consumableType, spellUuid, spellLevel, casterLevel, uses) {
@@ -3773,9 +3856,7 @@
       const weightedOptions = remainingOptions.map((option) => {
         const delta = Math.abs(targetRemainingBudget - (Number(option.price) || 0));
         const fitWeight = 1 / (1 + delta);
-        const healingWeight = option.isHealing
-          ? Number(HEALING_CATEGORY_WEIGHTS[normalizeText(bucketCandidate.sourceType)] || 1)
-          : 1;
+        const healingWeight = getConsumableSpellPreferenceWeight(option, bucketCandidate.sourceType);
         return {
           option,
           weight: Math.max(fitWeight * healingWeight, 0.0001),

@@ -2716,7 +2716,7 @@ function formatCurrencyBreakdownName(breakdown) {
       return `${amount.toLocaleString("en-US")}${denomination.key}`;
     })
     .filter(Boolean)
-    .join(" ");
+    .join("\u00A0\u00A0\u00A0");
 }
 
 function getCurrencyBreakdownTotalPrice(breakdown) {
