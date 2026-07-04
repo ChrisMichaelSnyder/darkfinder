@@ -345,17 +345,13 @@
       const activeSession = getActiveRandomLootSession();
       if (activeSession?.id !== sessionId) {
         state.activeLootSessionId = "";
-        state.isClosingForLootSession = true;
         stopLootSessionWatcher(state);
-        if (dialog?.rendered) dialog.close();
         return;
       }
 
       if (activeSession.status !== "collecting") {
         state.activeLootSessionId = "";
-        state.isClosingForLootSession = true;
         stopLootSessionWatcher(state);
-        if (dialog?.rendered) dialog.close();
       }
     }, 500);
   }

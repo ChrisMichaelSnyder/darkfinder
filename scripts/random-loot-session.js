@@ -1021,6 +1021,12 @@ function buildLootResultsDialogContent() {
         cursor: pointer;
         box-shadow: inset 0 1px 0 rgba(255,255,255,0.55);
       }
+      .darkfinder-random-loot-results-dialog-actions .darkfinder-random-loot-button {
+        width: auto;
+        min-width: 6.5rem;
+        max-width: none;
+        flex: 0 0 auto;
+      }
       .darkfinder-random-loot-results-dialog .darkfinder-random-loot-button:hover:not(:disabled) {
         border-color: #6f644f;
         filter: brightness(1.02);
@@ -1313,6 +1319,12 @@ function buildLootSessionDialogContent(role) {
         justify-content: center;
         gap: 0.6rem;
       }
+      .darkfinder-random-loot-player .darkfinder-random-loot-actions-gm .darkfinder-random-loot-button {
+        width: auto;
+        min-width: 8rem;
+        max-width: none;
+        flex: 0 0 auto;
+      }
       .darkfinder-random-loot-player .darkfinder-random-loot-button {
         min-width: 7rem;
         min-height: 2.15rem;
@@ -1571,10 +1583,10 @@ function buildLootSessionDialogContent(role) {
           <div class="darkfinder-random-loot-results-empty">No items have been shared yet.</div>
         </div>
       </div>
-      <div class="darkfinder-random-loot-actions">
+      <div class="darkfinder-random-loot-actions${isGm ? " darkfinder-random-loot-actions-gm" : ""}">
         ${isGm ? `
-          <button type="button" class="darkfinder-random-loot-button darkfinder-random-loot-button-danger" data-action="cancel-player-loot-session">Cancel</button>
-          <button type="button" class="darkfinder-random-loot-button darkfinder-random-loot-button-primary" data-action="force-submit-player-loot-session">Force Submit</button>
+          <button type="button" class="darkfinder-random-loot-button" data-action="cancel-player-loot-session">Cancel</button>
+          <button type="button" class="darkfinder-random-loot-button darkfinder-random-loot-button-danger" data-action="force-submit-player-loot-session">Force Submit</button>
         ` : `
           <button type="button" class="darkfinder-random-loot-button darkfinder-random-loot-button-primary" data-action="submit-player-loot">Submit</button>
         `}
@@ -1655,7 +1667,8 @@ function buildClaimPieChartHtml(claimantUsers) {
   });
   const title = claimantUsers
     .map((user) => String(user?.character?.name || user?.name || "Unknown"))
-    .join(", ");
+    .sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }))
+    .join("\n");
 
   return `<span class="darkfinder-random-loot-claim-pie" style="background: conic-gradient(${segments.join(", ")});" title="${escapeHtml(title)}"></span>`;
 }
@@ -2126,6 +2139,7 @@ function showItemTooltip(eventRoot, session, itemUuid, event) {
 
   tooltip.html(buildItemTooltipHtml(item, {
     contests: getItemContestEntries(session, itemUuid),
+    awardEntries: getItemAwardEntries(session, itemUuid),
   }));
   tooltip.addClass("is-visible");
   positionItemTooltip(eventRoot, event);
@@ -2169,7 +2183,7 @@ function buildItemTooltipHtml(item, options = {}) {
   const typeOrSlotHtml = item?.typeLabel
     ? `<div class="darkfinder-random-loot-tooltip-meta">${escapeHtml(item.typeLabel)}</div>`
     : "";
-  const contestHtml = buildItemContestTooltipHtml(options.contests);
+  const contestHtml = buildItemContestTooltipHtml(options.contests, options.awardEntries);
 
   return `
     <div class="darkfinder-random-loot-tooltip-title">${escapeHtml(item?.name || "Unnamed Item")}</div>
@@ -2188,29 +2202,55 @@ function getItemContestEntries(session, itemUuid) {
     .filter((contest) => String(contest?.itemUuid || "").trim() === normalizedItemUuid);
 }
 
-function buildItemContestTooltipHtml(contests) {
-  if (!Array.isArray(contests) || !contests.length) return "";
+function getItemAwardEntries(session, itemUuid) {
+  const normalizedItemUuid = String(itemUuid || "").trim();
+  if (!normalizedItemUuid) return [];
+
+  const awardEntries = session?.resolution?.awardsByItemUuid?.[normalizedItemUuid];
+  return Array.isArray(awardEntries) ? awardEntries : [];
+}
+
+function buildItemContestTooltipHtml(contests, awardEntries) {
+  const nonContestedAwardRows = buildItemAwardTooltipRows(awardEntries);
+  const hasContests = Array.isArray(contests) && contests.length;
+  if (!hasContests && !nonContestedAwardRows) return "";
+
+  const resultsSectionHtml = nonContestedAwardRows
+    ? `
+      <div class="darkfinder-random-loot-tooltip-contest">
+        <div class="darkfinder-random-loot-tooltip-contest-title">Results</div>
+        <ul>${nonContestedAwardRows}</ul>
+      </div>
+    `
+    : "";
+
+  if (!hasContests) return resultsSectionHtml;
 
   const roundsHtml = contests.map((contest, index) => {
-    const roundLabel = contests.length > 1 ? `Round ${index + 1}` : "Contest";
-    const resultRows = (contest.results || []).map((result) => {
+    const roundLabel = contests.length > 1
+      ? `<div class="darkfinder-random-loot-tooltip-contest-round-title">Round ${index + 1}</div>`
+      : "";
+    const resultRows = [...(contest.results || [])].sort((left, right) => {
+      const leftUser = game.users.get(String(left?.userId || "").trim());
+      const rightUser = game.users.get(String(right?.userId || "").trim());
+      const leftName = String(leftUser?.character?.name || leftUser?.name || "Unknown");
+      const rightName = String(rightUser?.character?.name || rightUser?.name || "Unknown");
+      return leftName.localeCompare(rightName, undefined, { sensitivity: "base" });
+    }).map((result) => {
       const user = game.users.get(String(result?.userId || "").trim());
       const actorName = String(user?.character?.name || user?.name || "Unknown");
-      const winnerBadge = String(contest?.winnerUserId || "").trim() === String(result?.userId || "").trim()
-        ? " <strong>(Winner)</strong>"
-        : "";
+      const formulaText = `${actorName}: ${String(result?.rollTotal ?? 0)} + ${formatSignedModifier(result?.modifier)} = ${String(result?.total ?? 0)}`;
+      const isWinner = String(contest?.winnerUserId || "").trim() === String(result?.userId || "").trim();
       return `
         <li>
-          ${escapeHtml(actorName)}: ${escapeHtml(String(result?.rollTotal ?? 0))}
-          + ${escapeHtml(formatSignedModifier(result?.modifier))}
-          = <strong>${escapeHtml(String(result?.total ?? 0))}</strong>${winnerBadge}
+          ${isWinner ? `<strong>${escapeHtml(formulaText)}</strong>` : escapeHtml(formulaText)}
         </li>
       `;
     }).join("");
 
     return `
       <div class="darkfinder-random-loot-tooltip-contest-round">
-        <div class="darkfinder-random-loot-tooltip-contest-round-title">${escapeHtml(roundLabel)}</div>
+        ${roundLabel}
         <ul>${resultRows}</ul>
       </div>
     `;
@@ -2222,6 +2262,27 @@ function buildItemContestTooltipHtml(contests) {
       ${roundsHtml}
     </div>
   `;
+}
+
+function buildItemAwardTooltipRows(awardEntries) {
+  if (!Array.isArray(awardEntries) || !awardEntries.length) return "";
+
+  return [...awardEntries].sort((left, right) => {
+    const leftUser = game.users.get(String(left?.userId || "").trim());
+    const rightUser = game.users.get(String(right?.userId || "").trim());
+    const leftName = String(leftUser?.character?.name || leftUser?.name || "Unknown");
+    const rightName = String(rightUser?.character?.name || rightUser?.name || "Unknown");
+    return leftName.localeCompare(rightName, undefined, { sensitivity: "base" });
+  }).map((award) => {
+    const user = game.users.get(String(award?.userId || "").trim());
+    const actorName = String(user?.character?.name || user?.name || "Unknown");
+    const method = String(award?.method || "uncontested").trim().toLowerCase();
+    const resultLabel = method === "split"
+      ? "Split"
+      : "Uncontested";
+
+    return `<li><strong>${escapeHtml(`${actorName} = ${resultLabel}`)}</strong></li>`;
+  }).join("");
 }
 
 function normalizeTooltipDescriptionMarkup(description) {
