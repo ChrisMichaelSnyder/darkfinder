@@ -12,6 +12,7 @@ const PLAYER_SUBMIT_WARNING = "Hitting Submit will lock in your claims and they 
 const lootSessionState = {
   dialogStateBySessionId: new Map(),
   resultsDialogStateBySessionId: new Map(),
+  pendingSessionById: new Map(),
   hooksRegistered: false,
 };
 
@@ -80,7 +81,8 @@ async function openRandomLootClaimSession(items, options = {}) {
   };
 
   await setStoredLootSession(session);
-  await broadcastLootSessionMessage({ type: "open-session", sessionId: session.id });
+  cachePendingLootSession(session);
+  await broadcastLootSessionMessage({ type: "open-session", sessionId: session.id, session });
   await openOrRefreshLootSessionDialog(session.id);
   return session;
 }
@@ -97,8 +99,11 @@ async function cancelRandomLootClaimSession(sessionId, options = {}) {
   };
 
   await setStoredLootSession(cancelledSession);
-  await broadcastLootSessionMessage({ type: "close-session", sessionId, reason: "cancelled" });
+  cachePendingLootSession(cancelledSession);
+  await broadcastLootSessionMessage({ type: "close-session", sessionId, reason: "cancelled", session: cancelledSession });
   closeLootSessionDialog(sessionId);
+  closeLootResultsDialog(sessionId);
+  clearPendingLootSession(sessionId);
 
   if (!options.silent) {
     ui.notifications.info("Closed the active loot claim session for all players.");
@@ -117,7 +122,8 @@ async function forceSubmitRandomLootClaimSession(sessionId) {
   };
 
   await setStoredLootSession(forcedSession);
-  await broadcastLootSessionMessage({ type: "refresh-session", sessionId });
+  cachePendingLootSession(forcedSession);
+  await broadcastLootSessionMessage({ type: "refresh-session", sessionId, session: forcedSession });
   await maybeResolveLootSession(forcedSession.id);
 }
 
@@ -125,6 +131,10 @@ async function handleSocketMessage(message) {
   const type = String(message?.type || "").trim();
   const sessionId = String(message?.sessionId || "").trim();
   if (!type || !sessionId) return;
+  const session = normalizeSocketSession(message?.session);
+  if (session?.id === sessionId) {
+    cachePendingLootSession(session);
+  }
 
   if (type === "request-claim-update") {
     if (!game.user?.isGM) return;
@@ -151,7 +161,7 @@ async function handleSocketMessage(message) {
   }
 
   if (type === "open-session" || type === "refresh-session") {
-    await openOrRefreshLootSessionDialog(sessionId);
+    await openOrRefreshLootSessionDialog(sessionId, session);
     return;
   }
 
@@ -160,11 +170,12 @@ async function handleSocketMessage(message) {
     const reason = String(message?.reason || "").trim();
     if (reason === "cancelled") {
       closeLootResultsDialog(sessionId);
+      clearPendingLootSession(sessionId);
       ui.notifications.info("The active loot claim session was closed by the GM.");
     } else if (reason === "resolving") {
       ui.notifications.info("Loot claims are locked in. Resolving awards now...");
     } else if (reason === "resolved") {
-      await openOrRefreshLootResultsDialog(sessionId);
+      await openOrRefreshLootResultsDialog(sessionId, session);
     }
   }
 }
@@ -198,7 +209,8 @@ async function applyClaimUpdate(message) {
   };
 
   await setStoredLootSession(nextSession);
-  await broadcastLootSessionMessage({ type: "refresh-session", sessionId });
+  cachePendingLootSession(nextSession);
+  await broadcastLootSessionMessage({ type: "refresh-session", sessionId, session: nextSession });
 }
 
 async function applyPlayerSubmit(message) {
@@ -216,7 +228,8 @@ async function applyPlayerSubmit(message) {
   };
 
   await setStoredLootSession(nextSession);
-  await broadcastLootSessionMessage({ type: "refresh-session", sessionId });
+  cachePendingLootSession(nextSession);
+  await broadcastLootSessionMessage({ type: "refresh-session", sessionId, session: nextSession });
   await maybeResolveLootSession(sessionId);
 }
 
@@ -237,12 +250,14 @@ async function maybeResolveLootSession(sessionId) {
   };
 
   await setStoredLootSession(resolvingSession);
-  await broadcastLootSessionMessage({ type: "close-session", sessionId, reason: "resolving" });
+  cachePendingLootSession(resolvingSession);
+  await broadcastLootSessionMessage({ type: "close-session", sessionId, reason: "resolving", session: resolvingSession });
   closeLootSessionDialog(sessionId);
 
   const resolvedSession = await resolveLootSessionAwards(resolvingSession);
   await setStoredLootSession(resolvedSession);
-  await broadcastLootSessionMessage({ type: "close-session", sessionId, reason: "resolved" });
+  cachePendingLootSession(resolvedSession);
+  await broadcastLootSessionMessage({ type: "close-session", sessionId, reason: "resolved", session: resolvedSession });
   closeLootSessionDialog(sessionId);
   await openOrRefreshLootResultsDialog(sessionId);
 }
@@ -406,7 +421,7 @@ async function awardResolvedLoot(items, awardsByItemUuid) {
 
     for (const award of awards) {
       const user = game.users.get(String(award?.userId || "").trim());
-      const actor = user?.character || null;
+      const actor = resolveLootRecipientActor(user);
       if (!actor) continue;
 
       const quantity = Math.max(1, Number(award?.quantity) || 1);
@@ -478,8 +493,8 @@ async function createResolutionChatMessages(items, awardsByItemUuid, contests) {
   }
 }
 
-async function openOrRefreshLootSessionDialog(sessionId) {
-  const session = getStoredLootSession();
+async function openOrRefreshLootSessionDialog(sessionId, fallbackSession = null) {
+  const session = resolveSessionForClient(sessionId, fallbackSession);
   if (!session?.id || session.id !== sessionId) return;
   if (!sessionAppliesToCurrentUser(session)) return;
 
@@ -585,8 +600,8 @@ function closeLootSessionDialog(sessionId) {
   state.dialog.close();
 }
 
-async function openOrRefreshLootResultsDialog(sessionId) {
-  const session = getStoredLootSession();
+async function openOrRefreshLootResultsDialog(sessionId, fallbackSession = null) {
+  const session = resolveSessionForClient(sessionId, fallbackSession);
   if (!session?.id || session.id !== sessionId || session.status !== "resolved") return;
   if (!sessionAppliesToCurrentUser(session)) return;
 
@@ -727,7 +742,7 @@ function bindLootResultsDialogEvents(eventRoot, dialogState) {
 }
 
 function renderLootResultsDialogState(eventRoot, dialogState) {
-  const latestSession = getStoredLootSession();
+  const latestSession = resolveSessionForClient(dialogState.sessionId, dialogState.session);
   if (!latestSession?.id || latestSession.id !== dialogState.sessionId) {
     closeLootResultsDialog(dialogState.sessionId);
     return;
@@ -807,7 +822,7 @@ function bindLootSessionDialogEvents(eventRoot, dialogState) {
 }
 
 function renderLootSessionDialogState(eventRoot, dialogState) {
-  const latestSession = getStoredLootSession();
+  const latestSession = resolveSessionForClient(dialogState.sessionId, dialogState.session);
   if (!latestSession?.id || latestSession.id !== dialogState.sessionId) {
     closeLootSessionDialog(dialogState.sessionId);
     return;
@@ -1331,8 +1346,10 @@ function buildLootSessionDialogContent(role) {
         box-shadow: inset 0 1px 0 rgba(255,255,255,0.45);
         flex: 0 0 1.15rem;
       }
-      .darkfinder-random-loot-player .darkfinder-random-loot-claim-pie.is-empty {
-        background: linear-gradient(180deg, rgba(255,255,255,0.55) 0%, rgba(219,208,186,0.75) 100%);
+      .darkfinder-random-loot-player .darkfinder-random-loot-claim-pie-spacer {
+        width: 1.15rem;
+        height: 1.15rem;
+        flex: 0 0 1.15rem;
       }
       .darkfinder-random-loot-player .darkfinder-random-loot-results-empty {
         display: flex;
@@ -1446,14 +1463,16 @@ function buildLootSessionItemsHtml(session, role) {
 
   return session.items.map((item) => {
     const claimantIds = Array.isArray(session.claimsByItemUuid?.[item.uuid]) ? session.claimsByItemUuid[item.uuid] : [];
+    const submittedUserIds = new Set(session.submittedUserIds || []);
     const claimantUsers = claimantIds
+      .filter((userId) => submittedUserIds.has(userId))
       .map((userId) => game.users.get(userId))
       .filter(Boolean);
     const checked = claimantIds.includes(game.user.id);
     const quantity = Math.max(1, Number(item?.quantity) || 1);
     const quantityLabel = quantity > 1 ? ` x${quantity}` : "";
     const checkboxMarkup = role === "gm"
-      ? `<input type="checkbox" class="darkfinder-random-loot-player-item-checkbox" disabled aria-hidden="true" tabindex="-1" />`
+      ? ""
       : `
         <input
           type="checkbox"
@@ -1488,7 +1507,7 @@ function buildLootSessionItemsHtml(session, role) {
 
 function buildClaimPieChartHtml(claimantUsers) {
   if (!claimantUsers?.length) {
-    return `<span class="darkfinder-random-loot-claim-pie is-empty" title="No players have claimed this item yet."></span>`;
+    return `<span class="darkfinder-random-loot-claim-pie-spacer" aria-hidden="true"></span>`;
   }
 
   const colors = claimantUsers.map((user) => resolveUserColor(user));
@@ -1591,19 +1610,26 @@ function getResolvedClaimantUserIds(session, itemUuid) {
     : [];
   return claimantIds.filter((userId) => {
     const user = game.users.get(String(userId || "").trim());
-    return !!user?.character;
+    return !!resolveLootRecipientActor(user);
   });
 }
 
 function getLootParticipantUsers() {
-  const activeAssigned = (game.users?.contents || []).filter((user) => user.active && !user.isGM && !!user.character);
-  if (activeAssigned.length) return activeAssigned;
-  return (game.users?.contents || []).filter((user) => !user.isGM && !!user.character);
+  const activeEligible = (game.users?.contents || []).filter((user) => user.active && !user.isGM && !!resolveLootRecipientActor(user));
+  if (activeEligible.length) return activeEligible;
+
+  const registeredEligible = (game.users?.contents || []).filter((user) => !user.isGM && !!resolveLootRecipientActor(user));
+  if (registeredEligible.length) return registeredEligible;
+
+  const activeNonGm = (game.users?.contents || []).filter((user) => user.active && !user.isGM);
+  if (activeNonGm.length) return activeNonGm;
+
+  return (game.users?.contents || []).filter((user) => !user.isGM);
 }
 
 function getUserCharacterWealth(userId) {
   const user = game.users.get(String(userId || "").trim());
-  return resolveActorWealth(user?.character || null);
+  return resolveActorWealth(resolveLootRecipientActor(user));
 }
 
 function normalizeSessionItems(items) {
@@ -1641,6 +1667,50 @@ async function broadcastLootSessionMessage(message) {
 
 function getStoredLootSession() {
   return game.settings.get(MODULE_ID, SESSION_SETTING_KEY) || {};
+}
+
+function resolveSessionForClient(sessionId, fallbackSession = null) {
+  const normalizedSessionId = String(sessionId || "").trim();
+  if (!normalizedSessionId) return null;
+
+  const storedSession = getStoredLootSession();
+  if (storedSession?.id === normalizedSessionId) {
+    cachePendingLootSession(storedSession);
+    return storedSession;
+  }
+
+  const normalizedFallback = normalizeSocketSession(fallbackSession);
+  if (normalizedFallback?.id === normalizedSessionId) {
+    cachePendingLootSession(normalizedFallback);
+    return normalizedFallback;
+  }
+
+  return lootSessionState.pendingSessionById.get(normalizedSessionId) || null;
+}
+
+function cachePendingLootSession(session) {
+  const normalizedSession = normalizeSocketSession(session);
+  const sessionId = String(normalizedSession?.id || "").trim();
+  if (!sessionId) return;
+  lootSessionState.pendingSessionById.set(sessionId, normalizedSession);
+}
+
+function clearPendingLootSession(sessionId) {
+  lootSessionState.pendingSessionById.delete(String(sessionId || "").trim());
+}
+
+function normalizeSocketSession(session) {
+  return session && typeof session === "object" ? session : null;
+}
+
+function resolveLootRecipientActor(user) {
+  if (!user) return null;
+  if (user.character) return user.character;
+
+  const ownerLevel = CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3;
+  const ownedActors = (game.actors?.contents || []).filter((actor) => actor?.testUserPermission?.(user, ownerLevel));
+  if (ownedActors.length === 1) return ownedActors[0];
+  return null;
 }
 
 async function setStoredLootSession(session) {

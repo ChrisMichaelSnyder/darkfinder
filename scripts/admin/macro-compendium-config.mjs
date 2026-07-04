@@ -98,7 +98,7 @@ const gmMacros = [
     id: "dfLootGen001",
     name: "Random Loot Generator",
     relativePath: "macros/gm-macros/random-loot-generator/random-loot-generator.js",
-    img: "icons/commodities/treasure/chest-worn-oak-gold-white.webp",
+    img: "icons/containers/chest/chest-reinforced-steel-walnut-brown.webp",
     ownershipDefault: 0,
   }),
   createEntry({
