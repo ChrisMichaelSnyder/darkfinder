@@ -381,7 +381,8 @@ async function resolveLootSessionAwards(session) {
     if (quantity === 1) remainder = 1;
 
     while (remainder > 0) {
-      const contest = await rollItemContest(item, claimantIds, wealthByUserId, sessionStatsByUserId);
+      const eligibleClaimantIds = getLowestAwardedClaimantIds(claimantIds, itemAwards);
+      const contest = await rollItemContest(item, eligibleClaimantIds, wealthByUserId, sessionStatsByUserId);
       contests.push(contest);
       itemAwards.push({
         userId: contest.winnerUserId,
@@ -407,6 +408,25 @@ async function resolveLootSessionAwards(session) {
     },
     sessionStatsByUserId,
   };
+}
+
+function getLowestAwardedClaimantIds(claimantIds, itemAwards) {
+  const awardCountByUserId = Object.fromEntries(
+    (claimantIds || []).map((userId) => [String(userId || "").trim(), 0])
+  );
+
+  for (const award of itemAwards || []) {
+    const userId = String(award?.userId || "").trim();
+    if (!userId || !Object.prototype.hasOwnProperty.call(awardCountByUserId, userId)) continue;
+    awardCountByUserId[userId] += Math.max(1, Number(award?.quantity) || 1);
+  }
+
+  const counts = Object.values(awardCountByUserId);
+  const minimumAwardCount = counts.length ? Math.min(...counts) : 0;
+
+  return (claimantIds || []).filter((userId) => {
+    return awardCountByUserId[String(userId || "").trim()] === minimumAwardCount;
+  });
 }
 
 async function rollItemContest(item, claimantIds, wealthByUserId, sessionStatsByUserId) {
@@ -515,6 +535,7 @@ async function createAwardItemSource(item, quantity) {
     if (!itemSource) return null;
 
     delete itemSource._id;
+    applyGeneratedConsumableStateToSource(itemSource, item);
     applyItemQuantityToSource(itemSource, quantity);
     return itemSource;
   }
@@ -540,6 +561,35 @@ function applyItemQuantityToSource(source, quantity) {
   }
   source.system = source.system || {};
   source.system.quantity = quantity;
+}
+
+function applyGeneratedConsumableStateToSource(source, item) {
+  if (!source || typeof source !== "object") return;
+  if (!item || typeof item !== "object") return;
+
+  const generatedName = String(item?.name || "").trim();
+  if (generatedName) {
+    source.name = generatedName;
+  }
+
+  const uses = Math.max(1, Number(item?.generationSource?.uses) || 0);
+  if (!(uses > 0)) return;
+
+  const usagePaths = [
+    "system.uses.value",
+    "system.uses.max",
+    "system.uses.maxFormula",
+    "system.quantityCharges.value",
+    "system.quantityCharges.max",
+    "system.charges.value",
+    "system.charges.max",
+  ];
+
+  for (const path of usagePaths) {
+    if (foundry?.utils?.hasProperty?.(source, path)) {
+      foundry.utils.setProperty(source, path, path.endsWith("maxFormula") ? String(uses) : uses);
+    }
+  }
 }
 
 async function openOrRefreshLootSessionDialog(sessionId, fallbackSession = null) {
@@ -1123,10 +1173,15 @@ function buildLootResultsDialogContent() {
         background: rgba(255,255,255,0.7);
       }
       .darkfinder-random-loot-results-dialog .darkfinder-random-loot-item-name {
+        display: block;
+        flex: 1 1 auto;
         min-width: 0;
         font-weight: 800;
         font-size: 1rem;
         color: #2b2218;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
       .darkfinder-random-loot-results-dialog .darkfinder-random-loot-item-price {
         font-weight: 900;
@@ -1463,6 +1518,8 @@ function buildLootSessionDialogContent(role) {
         background: rgba(255,255,255,0.7);
       }
       .darkfinder-random-loot-player .darkfinder-random-loot-item-name {
+        display: block;
+        flex: 1 1 auto;
         min-width: 0;
         font-weight: 800;
         font-size: 1rem;

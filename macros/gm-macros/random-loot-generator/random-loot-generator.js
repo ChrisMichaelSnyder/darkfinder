@@ -109,6 +109,9 @@
     isClosingForLootSession: false,
   };
 
+  const initialPreloadSettings = buildGeneratedLootSettings(state, wealthByLevel);
+  startLootPreload(preloadPacks, initialPreloadSettings.maxSingleItemValue, state.partyLevel);
+
   const content = buildDialogContent(state, wealthTablePayload);
 
   return new Promise((resolve) => {
@@ -179,7 +182,6 @@
         const eventRoot = dialogWindow.length ? dialogWindow : html;
         bindDialogEvents(eventRoot, dialog, state, wealthByLevel, settle);
         renderState(eventRoot, state, wealthByLevel);
-        startLootPreload(preloadPacks);
       },
       close: () => {
         stopLootSessionWatcher(state);
@@ -1298,10 +1300,6 @@
   }
 
   function buildDialogContent(state, wealthTablePayload) {
-    const sourceLabel = escapeHtml(String(wealthTablePayload?.source?.label || "Character Wealth by Level"));
-    const sourceUrl = escapeHtml(String(wealthTablePayload?.source?.url || ""));
-    const levelOneNote = wealthTablePayload?.notes?.level1 || "";
-
     return `
       <style>
         .darkfinder-random-loot {
@@ -1351,38 +1349,23 @@
         .darkfinder-random-loot-results-shell {
           flex: 0 0 auto;
           display: grid;
-          gap: 0.35rem;
-          padding: 0.85rem 0.95rem;
+          gap: 0.22rem;
+          padding: 0.65rem 0.85rem;
           border: 1px solid #705447;
           border-radius: 14px;
           background:
             linear-gradient(180deg, rgba(245, 239, 223, 0.98) 0%, rgba(227, 216, 194, 0.98) 100%);
           box-shadow: inset 0 1px 0 rgba(255,255,255,0.55);
         }
-        .darkfinder-random-loot-kicker {
-          font-size: 0.76rem;
-          font-weight: 800;
-          letter-spacing: 0.18em;
-          text-transform: uppercase;
-          color: #7b6650;
-        }
         .darkfinder-random-loot-title {
-          font-size: 1.28rem;
+          font-size: 1.18rem;
           font-weight: 900;
           letter-spacing: 0.03em;
           color: #5f3a2f;
         }
         .darkfinder-random-loot-help {
           color: #5b554a;
-          font-size: 0.9rem;
-        }
-        .darkfinder-random-loot-source {
-          color: #6f644f;
-          font-size: 0.78rem;
-        }
-        .darkfinder-random-loot-source a {
-          color: #6a3c34;
-          font-weight: 700;
+          font-size: 0.84rem;
         }
         .darkfinder-random-loot-settings {
           flex: 1 1 auto;
@@ -1720,6 +1703,8 @@
           background: rgba(255,255,255,0.7);
         }
         .darkfinder-random-loot-item-name {
+          display: block;
+          flex: 1 1 auto;
           min-width: 0;
           font-weight: 800;
           font-size: 1rem;
@@ -1852,10 +1837,8 @@
       <div class="darkfinder-random-loot">
         <div class="darkfinder-random-loot-controls">
           <div class="darkfinder-random-loot-intro">
-            <div class="darkfinder-random-loot-kicker">Darkfinder GM Tool</div>
             <div class="darkfinder-random-loot-title">Random Loot Budget Builder</div>
             <p class="darkfinder-random-loot-help">Tune the treasure budget, then generate a randomized item list from the target compendiums.</p>
-            <div class="darkfinder-random-loot-source">Wealth source: <a href="${sourceUrl}" target="_blank" rel="noopener noreferrer">${sourceLabel}</a>${levelOneNote ? ` | ${escapeHtml(levelOneNote)}` : ""}</div>
           </div>
           <div class="darkfinder-random-loot-settings">
             ${buildSettingCard({
@@ -2160,6 +2143,8 @@
           background: rgba(255,255,255,0.7);
         }
         .darkfinder-random-loot-player .darkfinder-random-loot-item-name {
+          display: block;
+          flex: 1 1 auto;
           min-width: 0;
           font-weight: 800;
           font-size: 1rem;
@@ -2424,10 +2409,15 @@
       .sort((left, right) => left.price - right.price);
   }
 
-  function startLootPreload(packs) {
+  function startLootPreload(packs, maxSingleItemValue = 0, partyLevel = 1) {
     if (packs?.length) {
       loadAllLootCandidates(packs).catch((error) => {
         console.warn("Random Loot Generator preload failed.", error);
+      });
+    }
+    if (maxSingleItemValue > 0) {
+      loadConsumableLootCandidates(maxSingleItemValue, partyLevel).catch((error) => {
+        console.warn("Random Loot Generator consumable preload failed.", error);
       });
     }
   }
