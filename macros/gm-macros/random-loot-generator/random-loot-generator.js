@@ -2544,6 +2544,7 @@
       uuid: `Synthetic.RandomLootBucket.${sanitizeSyntheticKey(bucket.key)}`,
       sourceUuid: "",
       sourceType: bucket.sourceType,
+      consumableType: bucket.consumableType,
       name: buildConsumableBucketDisplayName(bucket.consumableType, bucket.spellLevel, bucket.uses),
       img: getConsumableDisplayIcon(bucket.consumableType),
       price: representativePrice,
@@ -3392,22 +3393,44 @@
 
     if (!spellOptions.length) return null;
 
-    const weightedOptions = spellOptions.map((option) => {
-      const delta = Math.abs(targetRemainingBudget - (Number(option.price) || 0));
-      const fitWeight = 1 / (1 + delta);
-      const healingWeight = option.isHealing
-        ? Number(HEALING_CATEGORY_WEIGHTS[normalizeText(bucketCandidate.sourceType)] || 1)
-        : 1;
-      return {
-        option,
-        weight: Math.max(fitWeight * healingWeight, 0.0001),
-      };
-    });
+    const remainingOptions = [...spellOptions];
 
-    const selectedOption = chooseWeightedOption(weightedOptions);
-    if (!selectedOption) return null;
+    while (remainingOptions.length) {
+      const weightedOptions = remainingOptions.map((option) => {
+        const delta = Math.abs(targetRemainingBudget - (Number(option.price) || 0));
+        const fitWeight = 1 / (1 + delta);
+        const healingWeight = option.isHealing
+          ? Number(HEALING_CATEGORY_WEIGHTS[normalizeText(bucketCandidate.sourceType)] || 1)
+          : 1;
+        return {
+          option,
+          weight: Math.max(fitWeight * healingWeight, 0.0001),
+        };
+      });
 
-    return createConsumableCandidateFromOption(bucketCandidate, selectedOption);
+      const selectedOption = chooseWeightedOption(weightedOptions);
+      if (!selectedOption) return null;
+
+      try {
+        const createdCandidate = await createConsumableCandidateFromOption(bucketCandidate, selectedOption);
+        if (createdCandidate) return createdCandidate;
+      } catch (error) {
+        console.warn("Random Loot Generator skipped a consumable spell that PF1 could not convert.", {
+          bucket: bucketCandidate,
+          option: selectedOption,
+          error,
+        });
+      }
+
+      const failedIndex = remainingOptions.findIndex((option) => option?.spellUuid === selectedOption?.spellUuid);
+      if (failedIndex >= 0) {
+        remainingOptions.splice(failedIndex, 1);
+      } else {
+        break;
+      }
+    }
+
+    return null;
   }
 
   function chooseWeightedOption(weightedEntries) {
@@ -3430,6 +3453,13 @@
     if (!spellUuid) return null;
 
     const uses = Math.max(1, Number(option?.uses) || 1);
+    const consumableType = String(
+      bucketCandidate?.consumableType
+      || bucketCandidate?.bucketType
+      || bucketCandidate?.sourceType
+      || ""
+    ).trim();
+    if (!consumableType) return null;
     const spellDocument = await fromUuid(spellUuid);
     const helperTarget = resolveSpellConsumableHelperTarget(spellDocument);
     if (!spellDocument || !helperTarget) return null;
@@ -3437,7 +3467,7 @@
     const spellLevel = Number(option?.spellLevel) || 0;
     const casterLevel = Math.max(1, Number(option?.casterLevel) || 1);
 
-    const itemData = await helperTarget.fn.call(helperTarget.owner, spellDocument, bucketCandidate.consumableType, {
+    const itemData = await helperTarget.fn.call(helperTarget.owner, spellDocument, consumableType, {
       spellType,
       sl: spellLevel,
       cl: casterLevel,
@@ -3452,21 +3482,21 @@
     const actualImg = String(itemData.img || getConsumableDisplayIcon(bucketCandidate.consumableType));
 
     return {
-      id: buildSyntheticLootItemId(bucketCandidate.consumableType, spellUuid, option.spellLevel, option.casterLevel, uses),
-      uuid: buildSyntheticLootItemUuid(bucketCandidate.consumableType, spellUuid, option.spellLevel, option.casterLevel, uses),
+      id: buildSyntheticLootItemId(consumableType, spellUuid, option.spellLevel, option.casterLevel, uses),
+      uuid: buildSyntheticLootItemUuid(consumableType, spellUuid, option.spellLevel, option.casterLevel, uses),
       sourceUuid: spellUuid,
       sourceType: bucketCandidate.sourceType,
       name: actualName,
       img: actualImg,
       price: Number.isFinite(actualPrice) && actualPrice > 0 ? actualPrice : (Number(option.price) || 0),
       description: actualDescription || String(option.description || ""),
-      typeLabel: buildConsumableTypeLabel(bucketCandidate.consumableType, uses),
+      typeLabel: buildConsumableTypeLabel(consumableType, uses),
       quantity: 1,
       isHealing: !!option.isHealing,
       generationSource: {
         kind: "spell-consumable",
         spellUuid,
-        consumableType: bucketCandidate.consumableType,
+        consumableType,
         spellLevel: Number(option.spellLevel) || 0,
         casterLevel: Math.max(1, Number(option.casterLevel) || 1),
         uses,
