@@ -95,6 +95,13 @@ const gmMacros = [
     ownershipDefault: 0,
   }),
   createEntry({
+    id: "dfLootGen001",
+    name: "Random Loot Generator",
+    relativePath: "macros/gm-macros/random-loot-generator/random-loot-generator.js",
+    img: "icons/commodities/treasure/chest-worn-oak-gold-white.webp",
+    ownershipDefault: 0,
+  }),
+  createEntry({
     id: "dfTimeSwap01",
     name: "Switch Representative Characters",
     relativePath: "macros/gm-macros/switch-time-period/switch-time-period.js",

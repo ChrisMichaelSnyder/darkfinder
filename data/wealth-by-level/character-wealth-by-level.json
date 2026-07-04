@@ -1,0 +1,32 @@
+{
+  "source": {
+    "label": "d20PFSRD Gamemastering: Character Wealth by Level",
+    "url": "https://www.d20pfsrd.com/gamemastering/",
+    "verifiedOn": "2026-07-03"
+  },
+  "notes": {
+    "level1": "Level 1 uses a 150 gp baseline because the cited WBL chart begins at level 2."
+  },
+  "wealthByLevel": {
+    "1": 150,
+    "2": 1000,
+    "3": 3000,
+    "4": 6000,
+    "5": 10500,
+    "6": 16000,
+    "7": 23500,
+    "8": 33000,
+    "9": 46000,
+    "10": 62000,
+    "11": 82000,
+    "12": 108000,
+    "13": 140000,
+    "14": 185000,
+    "15": 240000,
+    "16": 315000,
+    "17": 410000,
+    "18": 530000,
+    "19": 685000,
+    "20": 880000
+  }
+}

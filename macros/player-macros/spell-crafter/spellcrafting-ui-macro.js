@@ -1210,6 +1210,33 @@
       .trim();
   }
 
+  function stripHtmlTagsPreservingLinks(html) {
+    if (!html) return "";
+    const withLinkMarkup = String(html).replace(
+      /<a\b[^>]*href=(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi,
+      (_match, _quote, url, labelHtml) => `[${stripHtmlTags(labelHtml)}](${String(url || "").trim()})`,
+    );
+    return stripHtmlTags(withLinkMarkup);
+  }
+
+  function renderInlineSpellMarkup(text) {
+    const source = String(text || "");
+    const linkPattern = /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g;
+    let cursor = 0;
+    let rendered = "";
+
+    for (const match of source.matchAll(linkPattern)) {
+      const [fullMatch, label, url] = match;
+      const start = match.index ?? 0;
+      rendered += escapeHtml(source.slice(cursor, start));
+      rendered += `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`;
+      cursor = start + fullMatch.length;
+    }
+
+    rendered += escapeHtml(source.slice(cursor));
+    return rendered;
+  }
+
   function removeCoreAugmentsSection(text) {
     return String(text || "")
       .replace(/(?:^|\n)\s*Core Augments?:[\s\S]*$/i, "")
@@ -2370,7 +2397,8 @@
   }
 
   function buildCastDescriptionText(core) {
-    let trimmed = getCoreDescriptionWithoutAugments(core);
+    const rawDescription = stripHtmlTagsPreservingLinks(getSpellDescription(core));
+    let trimmed = normalizeDisplayedSpellText(removeCoreAugmentsSection(rawDescription));
     const descriptionMatch = trimmed.match(/(?:^|\n)\s*Description:\s*/i);
     if (descriptionMatch) {
       const start = (descriptionMatch.index || 0) + descriptionMatch[0].length;
@@ -2396,7 +2424,7 @@
     const appliedAugmentsHtml = buildAppliedAugmentHtml(details);
     const attributeHtml = attributeText.replace(/\n/g, "<br>");
     const descriptionHtml = descriptionBody
-      ? `<strong>Description:</strong><br>${escapeHtml(descriptionBody).replace(/\n/g, "<br>")}`
+      ? `<strong>Description:</strong><br>${renderInlineSpellMarkup(descriptionBody).replace(/\n/g, "<br>")}`
       : "";
 
     return `

@@ -1,4 +1,7 @@
 import { MODULE_ID, registerApi } from "./api.js";
+import { registerRandomLootSessionFeature } from "./random-loot-session.js";
+
+registerRandomLootSessionFeature();
 
 Hooks.once("init", () => {
   console.log(`${MODULE_ID} | Initializing module.`);
@@ -7,6 +10,7 @@ Hooks.once("init", () => {
 Hooks.once("ready", () => {
   const api = registerApi();
   if (!api) return;
+  registerRandomLootSessionFeature(api);
   registerSpellAttackChatLinkHook(api);
   console.log(`${MODULE_ID} | API registered.`);
 });
