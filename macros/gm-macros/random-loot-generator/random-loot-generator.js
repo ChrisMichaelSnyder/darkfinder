@@ -24,6 +24,7 @@
     scroll: 1.7,
     wand: 2.05,
   };
+  const CATEGORY_COUNT_NORMALIZATION_POWER = 1;
   const CONSUMABLE_REPEAT_DAMPING = 0.93;
   const SAME_CONSUMABLE_TYPE_DAMPING = 0.86;
   const SAME_CONSUMABLE_SPELL_DAMPING = 0.38;
@@ -453,7 +454,7 @@
     const maximumTarget = Math.ceil(targetBudget * (1 + TARGET_TOLERANCE));
 
     const packs = resolveLootCompendiumPacks();
-    const candidateItems = await loadLootCandidates(packs, maxSingleItemValue);
+    const candidateItems = await loadLootCandidates(packs, maxSingleItemValue, settings.partyLevel);
     if (!candidateItems.length) {
       throw new Error(`No eligible loot candidates were found at or below ${formatGold(maxSingleItemValue)} gp.`);
     }
@@ -473,14 +474,21 @@
       });
       if (!selectedCandidate) break;
 
-      selectedItems.push(selectedCandidate);
-      totalValue += selectedCandidate.price;
+      const resolvedCandidate = resolveGeneratedLootCandidate(selectedCandidate, {
+        selectedItems,
+        maxAffordablePrice: Math.max(0, maximumTarget - totalValue),
+        targetRemainingBudget: targetBudget - totalValue,
+      });
+      if (!resolvedCandidate) {
+        removeCandidateFromPool(remainingCandidates, selectedCandidate);
+        continue;
+      }
 
-      const selectedIndex = remainingCandidates.findIndex((candidate) => candidate.uuid === selectedCandidate.uuid);
-      if (selectedIndex >= 0) {
-        remainingCandidates.splice(selectedIndex, 1);
-      } else {
-        break;
+      selectedItems.push(resolvedCandidate);
+      totalValue += resolvedCandidate.price;
+
+      if (!selectedCandidate.reusable) {
+        removeCandidateFromPool(remainingCandidates, selectedCandidate);
       }
     }
 
@@ -514,7 +522,7 @@
     const excludedUuids = new Set(state.generatedItems.map((item) => item.uuid));
     excludedUuids.delete(itemToReplace.uuid);
 
-    const candidateItems = (await loadLootCandidates(packs, maxSingleItemValue))
+    const candidateItems = (await loadLootCandidates(packs, maxSingleItemValue, settings.partyLevel))
       .filter((candidate) => !excludedUuids.has(candidate.uuid));
 
     if (!candidateItems.length) {
@@ -1002,14 +1010,21 @@
       });
       if (!selectedCandidate) break;
 
-      selectedItems.push(selectedCandidate);
-      totalValue += selectedCandidate.price;
+      const resolvedCandidate = resolveGeneratedLootCandidate(selectedCandidate, {
+        selectedItems,
+        maxAffordablePrice: Math.max(0, maximumTarget - totalValue),
+        targetRemainingBudget: targetBudget - totalValue,
+      });
+      if (!resolvedCandidate) {
+        removeCandidateFromPool(remainingCandidates, selectedCandidate);
+        continue;
+      }
 
-      const selectedIndex = remainingCandidates.findIndex((candidate) => candidate.uuid === selectedCandidate.uuid);
-      if (selectedIndex >= 0) {
-        remainingCandidates.splice(selectedIndex, 1);
-      } else {
-        break;
+      selectedItems.push(resolvedCandidate);
+      totalValue += resolvedCandidate.price;
+
+      if (!selectedCandidate.reusable) {
+        removeCandidateFromPool(remainingCandidates, selectedCandidate);
       }
     }
 
@@ -2296,10 +2311,10 @@
     return pack?.folder?.name || pack?.metadata?.folder || pack?.folderName || "";
   }
 
-  async function loadLootCandidates(packs, maxSingleItemValue) {
+  async function loadLootCandidates(packs, maxSingleItemValue, partyLevel = 1) {
     const [permanentCandidates, consumableCandidates] = await Promise.all([
       loadAllLootCandidates(packs),
-      loadConsumableLootCandidates(maxSingleItemValue),
+      loadConsumableLootCandidates(maxSingleItemValue, partyLevel),
     ]);
 
     return [...permanentCandidates, ...consumableCandidates]
@@ -2313,9 +2328,6 @@
         console.warn("Random Loot Generator preload failed.", error);
       });
     }
-    loadAllSpellDocuments().catch((error) => {
-      console.warn("Random Loot Generator spell preload failed.", error);
-    });
   }
 
   async function loadAllLootCandidates(packs) {
@@ -2371,9 +2383,10 @@
     return pendingLoad;
   }
 
-  async function loadConsumableLootCandidates(maxSingleItemValue) {
+  async function loadConsumableLootCandidates(maxSingleItemValue, partyLevel = 1) {
     const cache = getLootCache();
-    const versionedCacheKey = `${LOOT_CACHE_VERSION}|consumables|cap:${Math.max(0, Math.floor(maxSingleItemValue || 0))}`;
+    const maxSpellLevel = getMaximumConsumableSpellLevelForPartyLevel(partyLevel);
+    const versionedCacheKey = `${LOOT_CACHE_VERSION}|consumables|cap:${Math.max(0, Math.floor(maxSingleItemValue || 0))}|spellcap:${maxSpellLevel}`;
 
     if (cache.consumableCandidatesByKey.has(versionedCacheKey)) {
       return cache.consumableCandidatesByKey.get(versionedCacheKey);
@@ -2383,7 +2396,7 @@
       return cache.consumablePromisesByKey.get(versionedCacheKey);
     }
 
-    const pendingLoad = buildConsumableLootCandidates(maxSingleItemValue).then((candidates) => {
+    const pendingLoad = buildConsumableLootCandidates(maxSingleItemValue, maxSpellLevel).then((candidates) => {
       cache.consumableCandidatesByKey.set(versionedCacheKey, candidates);
       cache.consumablePromisesByKey.delete(versionedCacheKey);
       return candidates;
@@ -2396,7 +2409,7 @@
     return pendingLoad;
   }
 
-  async function buildConsumableLootCandidates(maxSingleItemValue) {
+  async function buildConsumableLootCandidates(maxSingleItemValue, maxAllowedSpellLevel) {
     const spells = await loadAllSpellDocuments();
     if (!spells.length) return [];
 
@@ -2406,23 +2419,24 @@
       return [];
     }
 
-    const candidateSpecs = [];
+    const bucketsByKey = new Map();
 
     for (const spell of spells) {
       const spellData = spell?.toObject?.() || spell;
       const [spellLevel, casterLevel] = getSpellMinimumLevelAndCasterLevel(modelTarget, spellData);
       if (!(spellLevel >= 0) || !(casterLevel > 0)) continue;
+      if (spellLevel > maxAllowedSpellLevel) continue;
 
       const spellType = resolveConsumableSpellType(spellData);
       const healing = isHealingSpell(spellData);
 
-      if (spellLevel <= 3 && isPotionEligibleSpell(spellData, spellLevel)) {
+      if (spellLevel <= Math.min(3, maxAllowedSpellLevel) && isPotionEligibleSpell(spellData, spellLevel)) {
         const potionPrice = getConsumablePriceFromModel(modelTarget, spellData, "potion", {
           sl: spellLevel,
           cl: casterLevel,
         });
         if (Number.isFinite(potionPrice) && potionPrice > 0 && potionPrice <= maxSingleItemValue) {
-          candidateSpecs.push({
+          addSpellOptionToConsumableBucket(bucketsByKey, {
             spell,
             spellLevel,
             casterLevel,
@@ -2430,6 +2444,7 @@
             consumableType: "potion",
             uses: 1,
             healing,
+            price: potionPrice,
           });
         }
       }
@@ -2439,7 +2454,7 @@
         cl: casterLevel,
       });
       if (Number.isFinite(scrollPrice) && scrollPrice > 0 && scrollPrice <= maxSingleItemValue) {
-        candidateSpecs.push({
+        addSpellOptionToConsumableBucket(bucketsByKey, {
           spell,
           spellLevel,
           casterLevel,
@@ -2447,10 +2462,11 @@
           consumableType: "scroll",
           uses: 1,
           healing,
+          price: scrollPrice,
         });
       }
 
-      if (spellLevel <= 4) {
+      if (spellLevel <= Math.min(4, maxAllowedSpellLevel)) {
         for (const uses of CONSUMABLE_WAND_CHARGE_OPTIONS) {
           const wandPrice = getConsumablePriceFromModel(modelTarget, spellData, "wand", {
             sl: spellLevel,
@@ -2458,7 +2474,7 @@
             uses,
           });
           if (!Number.isFinite(wandPrice) || wandPrice <= 0 || wandPrice > maxSingleItemValue) continue;
-          candidateSpecs.push({
+          addSpellOptionToConsumableBucket(bucketsByKey, {
             spell,
             spellLevel,
             casterLevel,
@@ -2466,56 +2482,82 @@
             consumableType: "wand",
             uses,
             healing,
+            price: wandPrice,
           });
         }
       }
     }
 
-    const results = await Promise.all(candidateSpecs.map((spec) => createConsumableCandidateFromSpec(modelTarget, spec)));
-    return results.filter(Boolean).sort((left, right) => left.price - right.price);
+    return Array.from(bucketsByKey.values())
+      .map((bucket) => createConsumableBucketCandidate(bucket))
+      .filter(Boolean)
+      .sort((left, right) => left.price - right.price);
   }
 
-  async function createConsumableCandidateFromSpec(modelTarget, spec) {
-    const spell = spec?.spell;
-    if (!spell) return null;
-
-    const itemData = await modelTarget.toConsumable.call(modelTarget.owner, spell, spec.consumableType, {
-      spellType: spec.spellType,
-      sl: spec.spellLevel,
-      cl: spec.casterLevel,
-      uses: spec.uses,
-      identified: true,
-    });
-    if (!itemData) return null;
-
-    const price = extractItemPrice(itemData);
-    if (!Number.isFinite(price) || price <= 0) return null;
-
-    const spellUuid = String(spell?.uuid || "").trim();
-    const uses = spec.consumableType === "wand" ? Math.max(1, Number(spec.uses) || 50) : 1;
-
-    return {
-      id: buildSyntheticLootItemId(spec.consumableType, spellUuid, spec.spellLevel, spec.casterLevel, uses),
-      uuid: buildSyntheticLootItemUuid(spec.consumableType, spellUuid, spec.spellLevel, spec.casterLevel, uses),
-      sourceUuid: spellUuid,
-      sourceType: spec.consumableType,
-      name: String(itemData.name || `${toTitleCase(spec.consumableType)} of ${spell.name || "Spell"}`),
-      img: itemData.img || "icons/svg/dice-target.svg",
-      price,
-      description: extractItemDescription(itemData),
-      typeLabel: buildConsumableTypeLabel(spec.consumableType, uses),
-      quantity: 1,
-      isHealing: !!spec.healing,
-      generationSource: {
-        kind: "spell-consumable",
-        spellUuid,
+  function addSpellOptionToConsumableBucket(bucketsByKey, spec) {
+    const bucketKey = buildConsumableBucketKey(spec.consumableType, spec.spellLevel, spec.uses);
+    if (!bucketsByKey.has(bucketKey)) {
+      bucketsByKey.set(bucketKey, {
+        key: bucketKey,
+        sourceType: spec.consumableType,
         consumableType: spec.consumableType,
         spellLevel: spec.spellLevel,
-        casterLevel: spec.casterLevel,
-        uses,
-        spellType: spec.spellType,
-        identified: true,
-      },
+        uses: spec.uses,
+        spellOptions: [],
+      });
+    }
+
+    const bucket = bucketsByKey.get(bucketKey);
+    const spellData = spec.spell?.toObject?.() || spec.spell;
+    const spellUuid = String(spec.spell?.uuid || "").trim();
+    if (!spellUuid) return;
+
+    bucket.spellOptions.push({
+      spellUuid,
+      spellName: String(spec.spell?.name || "Spell"),
+      description: extractItemDescription(spellData),
+      price: Number(spec.price) || 0,
+      spellLevel: spec.spellLevel,
+      casterLevel: spec.casterLevel,
+      spellType: spec.spellType,
+      uses: spec.uses,
+      isHealing: !!spec.healing,
+    });
+  }
+
+  function createConsumableBucketCandidate(bucket) {
+    const spellOptions = Array.isArray(bucket?.spellOptions) ? bucket.spellOptions.filter(Boolean) : [];
+    if (!spellOptions.length) return null;
+
+    const sortedPrices = spellOptions
+      .map((option) => Number(option?.price) || 0)
+      .filter((price) => price > 0)
+      .sort((left, right) => left - right);
+    if (!sortedPrices.length) return null;
+
+    const middleIndex = Math.floor(sortedPrices.length / 2);
+    const representativePrice = sortedPrices[middleIndex];
+    const healingCount = spellOptions.filter((option) => option.isHealing).length;
+
+    return {
+      id: `bucket:${bucket.key}`,
+      uuid: `Synthetic.RandomLootBucket.${sanitizeSyntheticKey(bucket.key)}`,
+      sourceUuid: "",
+      sourceType: bucket.sourceType,
+      name: buildConsumableBucketDisplayName(bucket.consumableType, bucket.spellLevel, bucket.uses),
+      img: getConsumableDisplayIcon(bucket.consumableType),
+      price: representativePrice,
+      description: `${spellOptions.length} possible spell(s)`,
+      typeLabel: buildConsumableTypeLabel(bucket.consumableType, bucket.uses),
+      quantity: 1,
+      isHealing: healingCount > 0,
+      bucketKey: bucket.key,
+      bucketType: bucket.consumableType,
+      bucketSpellLevel: bucket.spellLevel,
+      bucketUses: bucket.uses,
+      spellOptions,
+      generationSource: null,
+      reusable: true,
     };
   }
 
@@ -2812,6 +2854,11 @@
   function chooseWeightedRandomCandidate(candidates, remainingBudget, options = {}) {
     const safeCandidates = (candidates || []).filter(Boolean);
     if (!safeCandidates.length) return null;
+    const categoryCounts = safeCandidates.reduce((counts, candidate) => {
+      const sourceType = normalizeText(candidate?.sourceType || "permanent");
+      counts[sourceType] = (counts[sourceType] || 0) + 1;
+      return counts;
+    }, {});
 
     const weightedEntries = safeCandidates.map((candidate) => {
       const delta = Math.abs((Number(remainingBudget) || 0) - candidate.price);
@@ -2819,7 +2866,7 @@
       const rarityPenalty = computeSingleItemCapRarityPenalty(candidate.price, options.maxSingleItemValue);
       const rerollCount = getRememberedRerollCount(options.rerolledItemCounts, candidate.uuid);
       const rerollPenalty = rerollCount > 0 ? Math.pow(0.15, rerollCount) : 1;
-      const categoryWeight = getCandidateCategoryWeight(candidate);
+      const categoryWeight = getCandidateCategoryWeight(candidate, categoryCounts);
       const repeatPenalty = getCandidateRepeatPenalty(candidate, options.selectedItems);
       return {
         candidate,
@@ -2847,9 +2894,11 @@
     return 1 / (1 + (ratio * CAP_RARITY_WEIGHT_STRENGTH));
   }
 
-  function getCandidateCategoryWeight(candidate) {
+  function getCandidateCategoryWeight(candidate, categoryCounts = {}) {
     const sourceType = normalizeText(candidate?.sourceType || "permanent");
     let weight = Number(CONSUMABLE_CATEGORY_WEIGHTS[sourceType] || CONSUMABLE_CATEGORY_WEIGHTS.permanent || 1);
+    const categoryCount = Math.max(1, Number(categoryCounts?.[sourceType]) || 1);
+    weight /= Math.pow(categoryCount, CATEGORY_COUNT_NORMALIZATION_POWER);
 
     if (candidate?.isHealing && Object.prototype.hasOwnProperty.call(HEALING_CATEGORY_WEIGHTS, sourceType)) {
       weight *= Number(HEALING_CATEGORY_WEIGHTS[sourceType] || 1);
@@ -2864,13 +2913,18 @@
   }
 
   function getCandidateRepeatPenalty(candidate, selectedItems = []) {
-    if (!isSpellConsumableCandidate(candidate)) return 1;
-
     const consumableSelections = (selectedItems || []).filter((item) => isSpellConsumableCandidate(item));
-    const sameTypeSelections = consumableSelections.filter((item) => normalizeText(item?.sourceType) === normalizeText(candidate?.sourceType));
-    const sameSpellSelections = consumableSelections.filter((item) => {
-      return String(item?.generationSource?.spellUuid || "") === String(candidate?.generationSource?.spellUuid || "");
-    });
+    if (!consumableSelections.length) return 1;
+
+    const sourceType = normalizeText(candidate?.sourceType || "");
+    if (!sourceType || sourceType === "permanent") return 1;
+
+    const sameTypeSelections = consumableSelections.filter((item) => normalizeText(item?.sourceType) === sourceType);
+    const sameSpellSelections = isSpellConsumableCandidate(candidate)
+      ? consumableSelections.filter((item) => {
+        return String(item?.generationSource?.spellUuid || "") === String(candidate?.generationSource?.spellUuid || "");
+      })
+      : [];
 
     return Math.pow(CONSUMABLE_REPEAT_DAMPING, consumableSelections.length)
       * Math.pow(SAME_CONSUMABLE_TYPE_DAMPING, sameTypeSelections.length)
@@ -3273,6 +3327,140 @@
       return `Wand • ${Math.max(1, Number(uses) || 50)} Charges`;
     }
     return toTitleCase(consumableType);
+  }
+
+  function buildConsumableBucketKey(consumableType, spellLevel, uses) {
+    return `${consumableType}:${spellLevel}:${Math.max(1, Number(uses) || 1)}`;
+  }
+
+  function sanitizeSyntheticKey(value) {
+    return String(value || "").replace(/[^A-Za-z0-9._:-]+/g, "_");
+  }
+
+  function buildConsumableBucketDisplayName(consumableType, spellLevel, uses) {
+    if (consumableType === "wand") {
+      return `Level ${spellLevel} Wands (${Math.max(1, Number(uses) || 50)} Charges)`;
+    }
+    return `Level ${spellLevel} ${toTitleCase(consumableType)}s`;
+  }
+
+  function resolveGeneratedLootCandidate(candidate, options = {}) {
+    if (!candidate) return null;
+    if (!candidate.reusable || !Array.isArray(candidate.spellOptions)) return candidate;
+    return materializeConsumableBucketCandidate(candidate, options);
+  }
+
+  function materializeConsumableBucketCandidate(bucketCandidate, options = {}) {
+    const selectedSpellUuids = new Set((options.selectedItems || [])
+      .map((item) => String(item?.generationSource?.spellUuid || "").trim())
+      .filter(Boolean));
+    const maxAffordablePrice = Math.max(0, Number(options.maxAffordablePrice) || 0);
+    const targetRemainingBudget = Number(options.targetRemainingBudget) || 0;
+
+    let spellOptions = (bucketCandidate.spellOptions || []).filter((option) => {
+      if (!option) return false;
+      if (selectedSpellUuids.has(String(option.spellUuid || "").trim())) return false;
+      if (maxAffordablePrice > 0 && Number(option.price) > maxAffordablePrice) return false;
+      return true;
+    });
+
+    if (!spellOptions.length) {
+      spellOptions = (bucketCandidate.spellOptions || []).filter((option) => {
+        if (!option) return false;
+        return !selectedSpellUuids.has(String(option.spellUuid || "").trim());
+      });
+    }
+
+    if (!spellOptions.length) return null;
+
+    const weightedOptions = spellOptions.map((option) => {
+      const delta = Math.abs(targetRemainingBudget - (Number(option.price) || 0));
+      const fitWeight = 1 / (1 + delta);
+      const healingWeight = option.isHealing
+        ? Number(HEALING_CATEGORY_WEIGHTS[normalizeText(bucketCandidate.sourceType)] || 1)
+        : 1;
+      return {
+        option,
+        weight: Math.max(fitWeight * healingWeight, 0.0001),
+      };
+    });
+
+    const selectedOption = chooseWeightedOption(weightedOptions);
+    if (!selectedOption) return null;
+
+    return createConsumableCandidateFromOption(bucketCandidate, selectedOption);
+  }
+
+  function chooseWeightedOption(weightedEntries) {
+    const safeEntries = (weightedEntries || []).filter((entry) => entry?.weight > 0 && entry?.option);
+    if (!safeEntries.length) return null;
+
+    const totalWeight = safeEntries.reduce((sum, entry) => sum + entry.weight, 0);
+    let roll = Math.random() * totalWeight;
+
+    for (const entry of safeEntries) {
+      roll -= entry.weight;
+      if (roll <= 0) return entry.option;
+    }
+
+    return safeEntries[safeEntries.length - 1]?.option || null;
+  }
+
+  function createConsumableCandidateFromOption(bucketCandidate, option) {
+    const spellUuid = String(option?.spellUuid || "").trim();
+    if (!spellUuid) return null;
+
+    const uses = Math.max(1, Number(option?.uses) || 1);
+    return {
+      id: buildSyntheticLootItemId(bucketCandidate.consumableType, spellUuid, option.spellLevel, option.casterLevel, uses),
+      uuid: buildSyntheticLootItemUuid(bucketCandidate.consumableType, spellUuid, option.spellLevel, option.casterLevel, uses),
+      sourceUuid: spellUuid,
+      sourceType: bucketCandidate.sourceType,
+      name: buildConsumableDisplayName(bucketCandidate.consumableType, option.spellName || "Spell"),
+      img: getConsumableDisplayIcon(bucketCandidate.consumableType),
+      price: Number(option.price) || 0,
+      description: String(option.description || ""),
+      typeLabel: buildConsumableTypeLabel(bucketCandidate.consumableType, uses),
+      quantity: 1,
+      isHealing: !!option.isHealing,
+      generationSource: {
+        kind: "spell-consumable",
+        spellUuid,
+        consumableType: bucketCandidate.consumableType,
+        spellLevel: Number(option.spellLevel) || 0,
+        casterLevel: Math.max(1, Number(option.casterLevel) || 1),
+        uses,
+        spellType: String(option.spellType || "arcane"),
+        identified: true,
+      },
+    };
+  }
+
+  function removeCandidateFromPool(candidatePool, candidate) {
+    const selectedIndex = (candidatePool || []).findIndex((entry) => String(entry?.uuid || "") === String(candidate?.uuid || ""));
+    if (selectedIndex >= 0) {
+      candidatePool.splice(selectedIndex, 1);
+    }
+  }
+
+  function buildConsumableDisplayName(consumableType, spellName) {
+    const safeSpellName = String(spellName || "Spell").trim() || "Spell";
+    if (consumableType === "potion") return `Potion of ${safeSpellName}`;
+    if (consumableType === "scroll") return `Scroll of ${safeSpellName}`;
+    if (consumableType === "wand") return `Wand of ${safeSpellName}`;
+    return `${toTitleCase(consumableType)} of ${safeSpellName}`;
+  }
+
+  function getConsumableDisplayIcon(consumableType) {
+    if (consumableType === "potion") return "systems/pf1/icons/items/potions/minor-blue.jpg";
+    if (consumableType === "scroll") return "systems/pf1/icons/items/inventory/scroll-magic.jpg";
+    if (consumableType === "wand") return "systems/pf1/icons/items/inventory/wand-star.jpg";
+    return "icons/svg/dice-target.svg";
+  }
+
+  function getMaximumConsumableSpellLevelForPartyLevel(partyLevel) {
+    const safePartyLevel = clampMinInteger(partyLevel, 1);
+    return Math.max(0, Math.floor(safePartyLevel / 2) + 1);
   }
 
   function deriveMinimumSpellLevelAndCasterLevelFromLearnedAt(spellData) {
