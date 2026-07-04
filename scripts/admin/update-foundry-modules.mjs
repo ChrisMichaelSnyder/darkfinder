@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const DEFAULT_SETUP_URLS = [
   "https://carrion.davidleepatrick.com/setup",
+  "https://everflame.davidleepatrick.com/setup",
   "https://nightfall.davidleepatrick.com/setup",
   "https://whatif.davidleepatrick.com/setup",
 ];
