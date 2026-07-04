@@ -6,6 +6,7 @@ const PLAYER_DIALOG_WIDTH = 680;
 const PLAYER_DIALOG_HEIGHT = 760;
 const GM_DIALOG_WIDTH = 760;
 const GM_DIALOG_HEIGHT = 760;
+const RESPONSE_FLAG_KEY = "randomLootSessionResponse";
 const FORCE_SUBMIT_WARNING = "Forcing submissions will lock in every players currently claimed items whether they are ready or not. Are you sure you want to do that?";
 const PLAYER_SUBMIT_WARNING = "Hitting Submit will lock in your claims and they can't be changed. Are you sure?";
 
@@ -14,6 +15,7 @@ const lootSessionState = {
   resultsDialogStateBySessionId: new Map(),
   pendingSessionById: new Map(),
   settingWatcherIntervalId: null,
+  responseWatcherIntervalId: null,
   lastObservedSessionSignature: "",
   hooksRegistered: false,
 };
@@ -34,6 +36,7 @@ function registerRandomLootSessionFeature(api) {
       game.socket.on(SOCKET_NAME, handleSocketMessage);
       Hooks.on("updateSetting", handleLootSessionSettingUpdate);
       startLootSessionSettingWatcher();
+      startLootSessionResponseWatcher();
       void syncLootSessionUiFromSetting(getStoredLootSession());
     });
 
@@ -65,6 +68,8 @@ async function openRandomLootClaimSession(items, options = {}) {
   if (!normalizedItems.length) {
     throw new Error("No loot items were available to send to players.");
   }
+
+  await resetLootSessionResponses(participantUsers);
 
   const session = {
     id: randomID(),
@@ -119,11 +124,13 @@ async function forceSubmitRandomLootClaimSession(sessionId) {
   if (!game.user?.isGM) return;
   const session = getStoredLootSession();
   if (!session?.id || session.id !== sessionId || session.status !== "collecting") return;
+  const materialized = buildSessionResponseState(session);
 
   const forcedSession = {
     ...session,
     forcedSubmit: true,
-    submittedUserIds: [...new Set(session.participantUserIds)],
+    claimsByItemUuid: materialized.claimsByItemUuid,
+    submittedUserIds: [...new Set(getRequiredParticipantUserIds(session))],
   };
 
   await setStoredLootSession(forcedSession);
@@ -208,6 +215,38 @@ function startLootSessionSettingWatcher() {
   }, 350);
 }
 
+function startLootSessionResponseWatcher() {
+  if (lootSessionState.responseWatcherIntervalId) return;
+
+  lootSessionState.responseWatcherIntervalId = window.setInterval(() => {
+    if (!game.user?.isGM) return;
+    void reconcileActiveLootSessionFromResponses();
+  }, 350);
+}
+
+async function reconcileActiveLootSessionFromResponses() {
+  const session = getStoredLootSession();
+  if (!session?.id || session.status !== "collecting") return;
+
+  const materialized = buildSessionResponseState(session);
+  const currentSignature = JSON.stringify({
+    claimsByItemUuid: session.claimsByItemUuid || {},
+    submittedUserIds: [...(session.submittedUserIds || [])].map((userId) => String(userId || "")).sort(),
+  });
+  const nextSignature = JSON.stringify(materialized);
+  if (currentSignature === nextSignature) return;
+
+  const nextSession = {
+    ...session,
+    claimsByItemUuid: materialized.claimsByItemUuid,
+    submittedUserIds: materialized.submittedUserIds,
+  };
+
+  await setStoredLootSession(nextSession);
+  cachePendingLootSession(nextSession);
+  await maybeResolveLootSession(nextSession.id);
+}
+
 async function applyClaimUpdate(message) {
   const session = getStoredLootSession();
   const sessionId = String(message?.sessionId || "").trim();
@@ -268,7 +307,8 @@ async function maybeResolveLootSession(sessionId) {
 
   const participantIds = session.participantUserIds || [];
   const submittedIds = new Set(session.submittedUserIds || []);
-  const everyoneSubmitted = participantIds.every((userId) => submittedIds.has(userId));
+  const requiredParticipantIds = getRequiredParticipantUserIds(session);
+  const everyoneSubmitted = requiredParticipantIds.every((userId) => submittedIds.has(userId));
   if (!everyoneSubmitted) return;
 
   const resolvingSession = {
@@ -298,7 +338,7 @@ async function resolveLootSessionAwards(session) {
   });
 
   const wealthByUserId = Object.fromEntries(
-    (session.participantUserIds || []).map((userId) => [userId, getUserCharacterWealth(userId)])
+    getRequiredParticipantUserIds(session).map((userId) => [userId, getUserCharacterWealth(userId)])
   );
   const sessionStatsByUserId = { ...(session.sessionStatsByUserId || {}) };
   const awardsByItemUuid = {};
@@ -859,6 +899,20 @@ function bindLootSessionDialogEvents(eventRoot, dialogState) {
     const checkbox = event.currentTarget;
     const itemUuid = String(checkbox.dataset.itemUuid || "").trim();
     if (!itemUuid) return;
+    await updateCurrentUserLootSessionResponse(dialogState.sessionId, (response) => {
+      const claimedItemUuids = new Set(response.claimedItemUuids || []);
+      if (checkbox.checked) {
+        claimedItemUuids.add(itemUuid);
+      } else {
+        claimedItemUuids.delete(itemUuid);
+      }
+
+      return {
+        ...response,
+        claimedItemUuids: Array.from(claimedItemUuids),
+      };
+    });
+    renderLootSessionDialogState(eventRoot, dialogState);
     await broadcastLootSessionMessage({
       type: "request-claim-update",
       sessionId: dialogState.sessionId,
@@ -875,10 +929,7 @@ function bindLootSessionDialogEvents(eventRoot, dialogState) {
 
   eventRoot.off("click", "[data-action='cancel-player-loot-session']").on("click", "[data-action='cancel-player-loot-session']", async (event) => {
     event.preventDefault();
-    await broadcastLootSessionMessage({
-      type: "request-cancel",
-      sessionId: dialogState.sessionId,
-    });
+    await cancelRandomLootClaimSession(dialogState.sessionId);
   });
 
   eventRoot.off("click", "[data-action='force-submit-player-loot-session']").on("click", "[data-action='force-submit-player-loot-session']", async (event) => {
@@ -896,7 +947,7 @@ function renderLootSessionDialogState(eventRoot, dialogState) {
 
   dialogState.session = latestSession;
   const isPlayer = dialogState.role !== "gm";
-  const currentUserSubmitted = (latestSession.submittedUserIds || []).includes(game.user.id);
+  const currentUserSubmitted = isCurrentUserSubmittedForSession(latestSession);
   const isLocked = latestSession.status !== "collecting" || (isPlayer && currentUserSubmitted);
 
   hideItemTooltip(eventRoot);
@@ -1534,7 +1585,9 @@ function buildLootSessionItemsHtml(session, role) {
       .filter((userId) => submittedUserIds.has(userId))
       .map((userId) => game.users.get(userId))
       .filter(Boolean);
-    const checked = claimantIds.includes(game.user.id);
+    const checked = role === "gm"
+      ? claimantIds.includes(game.user.id)
+      : getCurrentUserClaimedItemUuids(session.id).has(item.uuid);
     const quantity = Math.max(1, Number(item?.quantity) || 1);
     const quantityLabel = quantity > 1 ? ` x${quantity}` : "";
     const checkboxMarkup = role === "gm"
@@ -1603,7 +1656,7 @@ function buildSessionStatusText(session, role) {
     return "This loot claim session was cancelled.";
   }
 
-  const participantIds = session.participantUserIds || [];
+  const participantIds = getRequiredParticipantUserIds(session);
   const submittedIds = new Set(session.submittedUserIds || []);
   const waitingNames = participantIds
     .filter((userId) => !submittedIds.has(userId))
@@ -1631,6 +1684,10 @@ function openForceSubmitConfirmation(sessionId) {
       accept: {
         label: "Accept",
         callback: async () => {
+          if (game.user?.isGM) {
+            await forceSubmitRandomLootClaimSession(sessionId);
+            return;
+          }
           await broadcastLootSessionMessage({
             type: "request-force-submit",
             sessionId,
@@ -1653,6 +1710,14 @@ function openPlayerSubmitConfirmation(sessionId) {
       accept: {
         label: "Accept",
         callback: async () => {
+          await updateCurrentUserLootSessionResponse(sessionId, (response) => ({
+            ...response,
+            submitted: true,
+          }));
+          const dialogState = lootSessionState.dialogStateBySessionId.get(sessionId);
+          if (dialogState?.eventRoot) {
+            renderLootSessionDialogState(dialogState.eventRoot, dialogState);
+          }
           await broadcastLootSessionMessage({
             type: "request-submit",
             sessionId,
@@ -1684,13 +1749,100 @@ function getLootParticipantUsers() {
   const activeEligible = (game.users?.contents || []).filter((user) => user.active && !user.isGM && !!resolveLootRecipientActor(user));
   if (activeEligible.length) return activeEligible;
 
-  const registeredEligible = (game.users?.contents || []).filter((user) => !user.isGM && !!resolveLootRecipientActor(user));
-  if (registeredEligible.length) return registeredEligible;
-
   const activeNonGm = (game.users?.contents || []).filter((user) => user.active && !user.isGM);
   if (activeNonGm.length) return activeNonGm;
 
-  return (game.users?.contents || []).filter((user) => !user.isGM);
+  return [];
+}
+
+function getRequiredParticipantUserIds(session) {
+  const participantIds = [...(session?.participantUserIds || [])].map((userId) => String(userId || "").trim()).filter(Boolean);
+  const activeParticipantIds = participantIds.filter((userId) => !!game.users.get(userId)?.active);
+  return activeParticipantIds.length ? activeParticipantIds : participantIds;
+}
+
+function getLootSessionResponse(user = game.user) {
+  const response = user?.getFlag?.(MODULE_ID, RESPONSE_FLAG_KEY);
+  return response && typeof response === "object" ? response : {};
+}
+
+function getNormalizedLootSessionResponse(user = game.user, sessionId = "") {
+  const normalizedSessionId = String(sessionId || "").trim();
+  const response = getLootSessionResponse(user);
+  if (String(response?.sessionId || "").trim() !== normalizedSessionId) {
+    return {
+      sessionId: normalizedSessionId,
+      claimedItemUuids: [],
+      submitted: false,
+    };
+  }
+
+  return {
+    sessionId: normalizedSessionId,
+    claimedItemUuids: [...new Set((response?.claimedItemUuids || []).map((itemUuid) => String(itemUuid || "").trim()).filter(Boolean))],
+    submitted: !!response?.submitted,
+  };
+}
+
+async function updateCurrentUserLootSessionResponse(sessionId, updater) {
+  const normalizedSessionId = String(sessionId || "").trim();
+  if (!normalizedSessionId || !game.user) return;
+
+  const current = getNormalizedLootSessionResponse(game.user, normalizedSessionId);
+  const next = typeof updater === "function" ? updater(current) : current;
+  await game.user.setFlag(MODULE_ID, RESPONSE_FLAG_KEY, {
+    sessionId: normalizedSessionId,
+    claimedItemUuids: [...new Set((next?.claimedItemUuids || []).map((itemUuid) => String(itemUuid || "").trim()).filter(Boolean))],
+    submitted: !!next?.submitted,
+    updatedAt: Date.now(),
+  });
+}
+
+async function resetLootSessionResponses(users) {
+  for (const user of users || []) {
+    if (!user?.id) continue;
+    await user.setFlag(MODULE_ID, RESPONSE_FLAG_KEY, {
+      sessionId: "",
+      claimedItemUuids: [],
+      submitted: false,
+      updatedAt: Date.now(),
+    });
+  }
+}
+
+function buildSessionResponseState(session) {
+  const itemUuids = new Set((session?.items || []).map((item) => String(item?.uuid || "").trim()).filter(Boolean));
+  const claimsByItemUuid = {};
+  const submittedUserIds = [];
+
+  for (const userId of getRequiredParticipantUserIds(session)) {
+    const user = game.users.get(userId);
+    const response = getNormalizedLootSessionResponse(user, session.id);
+    if (response.submitted) {
+      submittedUserIds.push(userId);
+    }
+    for (const itemUuid of response.claimedItemUuids || []) {
+      if (!itemUuids.has(itemUuid)) continue;
+      const currentClaimants = claimsByItemUuid[itemUuid] || [];
+      claimsByItemUuid[itemUuid] = [...new Set([...currentClaimants, userId])];
+    }
+  }
+
+  return {
+    claimsByItemUuid,
+    submittedUserIds: [...new Set(submittedUserIds)].sort(),
+  };
+}
+
+function getCurrentUserClaimedItemUuids(sessionId) {
+  return new Set(getNormalizedLootSessionResponse(game.user, sessionId).claimedItemUuids || []);
+}
+
+function isCurrentUserSubmittedForSession(session) {
+  const normalizedSessionId = String(session?.id || "").trim();
+  if (!normalizedSessionId) return false;
+  if ((session?.submittedUserIds || []).includes(game.user.id)) return true;
+  return !!getNormalizedLootSessionResponse(game.user, normalizedSessionId).submitted;
 }
 
 function getUserCharacterWealth(userId) {
