@@ -2461,11 +2461,43 @@
 
   function findCompendiumPackByPath(targetPath) {
     const normalizedTarget = normalizeText(targetPath);
-    return Array.from(game.packs || []).find((pack) => {
+    const targetSegments = normalizedTarget.split("/").filter(Boolean);
+    const normalizedTargetWithoutPluralItems = normalizedTarget.replace(/\s+items?$/i, "");
+    const exactMatch = Array.from(game.packs || []).find((pack) => {
       const folderName = normalizeText(getCompendiumFolderName(pack));
       const label = normalizeText(pack.metadata?.label || pack.title || pack.collection || "");
       const combined = [folderName, label].filter(Boolean).join("/");
       return combined === normalizedTarget;
+    });
+    if (exactMatch) return exactMatch;
+
+    const fuzzyMatch = Array.from(game.packs || []).find((pack) => {
+      const folderName = normalizeText(getCompendiumFolderName(pack));
+      const label = normalizeText(pack.metadata?.label || pack.title || pack.collection || "");
+      const combined = [folderName, label].filter(Boolean).join("/");
+      if (!combined) return false;
+
+      const normalizedCombinedWithoutPluralItems = combined.replace(/\s+items?$/i, "");
+      if (normalizedCombinedWithoutPluralItems === normalizedTargetWithoutPluralItems) return true;
+
+      return targetSegments.every((segment) => combined.includes(segment));
+    });
+    if (fuzzyMatch) return fuzzyMatch;
+
+    return Array.from(game.packs || []).find((pack) => {
+      const folderName = normalizeText(getCompendiumFolderName(pack));
+      const label = normalizeText(pack.metadata?.label || pack.title || pack.collection || "");
+
+      if (normalizedTarget.includes("wondrous") || normalizedTarget.includes("wonderous")) {
+        return label.includes("wondrous")
+          || label.includes("wonderous")
+          || (folderName.includes("gear") && (label.includes("wondrous") || label.includes("wonderous")));
+      }
+      if (normalizedTarget.includes("magic items")) {
+        return label.includes("magic items")
+          || ((folderName.includes("equipment") || folderName.includes("gear")) && label.includes("magic items"));
+      }
+      return false;
     }) || null;
   }
 
