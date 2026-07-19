@@ -174,7 +174,7 @@ entries:
     category: "Temporary"
     hideFromToken: true
     limitedUses: "Per Day"
-    maxUsesFormula: "@attributes.hd.total"
+    maxUsesFormula: "min(@abilities.dex.total + @resources.fatigue.value, @abilities.str.total + @resources.fatigue.value)"
     changes:
       - target: "Strength"
         formula: "-@resources.fatigue.value"

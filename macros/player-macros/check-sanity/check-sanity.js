@@ -11,6 +11,7 @@
   // Resolve-style badge colors
   const GREEN = "#43a047"; // SUCCESS
   const RED   = "#ff4c4c"; // FAIL
+  const COMMON_BUFFS_PACK_ID = "darkfinder.common-buffs";
 
   /** ---------- Per-player pending guard ---------- */
   function isPending() {
@@ -64,16 +65,134 @@
     return (Date.now() - setAt) <= TTL_MS;
   }
 
-  /** ---------- Sanity item helpers (Feature or Buff named "Sanity") ---------- */
+  /** ---------- Common Buff helpers ---------- */
+  function deepCloneData(value) {
+    if (foundry?.utils?.deepClone) return foundry.utils.deepClone(value);
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function flattenObject(object, prefix = "", result = {}) {
+    for (const [key, value] of Object.entries(object || {})) {
+      const path = prefix ? `${prefix}.${key}` : key;
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        flattenObject(value, path, result);
+        continue;
+      }
+      result[path] = value;
+    }
+    return result;
+  }
+
+  async function getCommonBuffTemplateData(buffName) {
+    const pack = game.packs.get(COMMON_BUFFS_PACK_ID);
+    if (!pack) {
+      throw new Error(`Could not find the ${COMMON_BUFFS_PACK_ID} compendium.`);
+    }
+
+    if (!pack.index?.size && typeof pack.getIndex === "function") {
+      await pack.getIndex();
+    }
+
+    const indexEntry = pack.index?.find?.((entry) => entry?.name === buffName);
+    if (!indexEntry?._id) {
+      throw new Error(`Could not find ${buffName} in ${pack.metadata?.label || COMMON_BUFFS_PACK_ID}.`);
+    }
+
+    const template = await pack.getDocument(indexEntry._id);
+    if (!template) {
+      throw new Error(`Could not load ${buffName} from ${pack.metadata?.label || COMMON_BUFFS_PACK_ID}.`);
+    }
+
+    const data = typeof template.toObject === "function"
+      ? template.toObject()
+      : deepCloneData(template);
+
+    delete data._id;
+    delete data.id;
+    delete data.folder;
+    delete data.sort;
+    delete data.pack;
+    return data;
+  }
+
+  function findCommonBuff(actor, buffName) {
+    const target = String(buffName || "").trim().toLowerCase();
+    return (actor.items ?? []).find((item) => (
+      item?.type === "buff" && String(item.name ?? "").trim().toLowerCase() === target
+    )) || null;
+  }
+
+  function buildCommonBuffRepairUpdate(templateData, currentUsesValue) {
+    const updateData = deepCloneData(templateData);
+    delete updateData._id;
+    delete updateData.id;
+    delete updateData.folder;
+    delete updateData.sort;
+    delete updateData.pack;
+    delete updateData.ownership;
+    delete updateData._stats;
+
+    if (!updateData.system) updateData.system = {};
+    if (!updateData.system.uses) updateData.system.uses = {};
+    updateData.system.uses.value = currentUsesValue;
+
+    return flattenObject(updateData);
+  }
+
+  async function resolveCreatedUsesMax(actor, itemData) {
+    const formula = String(itemData.system?.uses?.maxFormula || "").trim();
+    if (formula) {
+      try {
+        const roll = new Roll(formula, actor.getRollData?.() || actor.system || {});
+        await roll.evaluate();
+        const total = Math.floor(Number(roll.total));
+        if (Number.isFinite(total)) return Math.max(0, total);
+      } catch (err) {
+        console.warn("Sanity Check: Could not evaluate Common Buff max uses formula.", { formula, err });
+      }
+    }
+
+    const fallback = Math.floor(Number(itemData.system?.uses?.max ?? NaN));
+    return Number.isFinite(fallback) ? Math.max(0, fallback) : null;
+  }
+
+  async function prepareCreatedCommonBuffData(actor, templateData, buffName) {
+    const data = deepCloneData(templateData);
+    const normalizedName = String(buffName || "").trim().toLowerCase();
+    if (normalizedName === "sanity" || normalizedName === "short rest") {
+      const max = await resolveCreatedUsesMax(actor, data);
+      if (max !== null) {
+        if (!data.system) data.system = {};
+        if (!data.system.uses) data.system.uses = {};
+        data.system.uses.max = max;
+        data.system.uses.value = max;
+      }
+    }
+    return data;
+  }
+
+  async function ensureCommonBuff(actor, buffName) {
+    const templateData = await getCommonBuffTemplateData(buffName);
+    const existing = findCommonBuff(actor, buffName);
+
+    if (!existing) {
+      const createData = await prepareCreatedCommonBuffData(actor, templateData, buffName);
+      const [created] = await actor.createEmbeddedDocuments("Item", [createData]);
+      return created || findCommonBuff(actor, buffName);
+    }
+
+    const currentValue = Number(existing.system?.uses?.value ?? 0) || 0;
+    await existing.update(buildCommonBuffRepairUpdate(templateData, currentValue));
+    return findCommonBuff(actor, buffName);
+  }
+
+  /** ---------- Sanity item helpers ---------- */
   function findSanityItem(actor) {
-    const target = "sanity";
-    return (actor.items ?? []).find(i => {
-      const nm = String(i.name ?? "").trim().toLowerCase();
-      if (nm !== target) return false;
-      const max = Number(i.system?.uses?.max ?? NaN);
-      const val = Number(i.system?.uses?.value ?? NaN);
-      return Number.isFinite(max) || Number.isFinite(val);
-    }) || null;
+    return findCommonBuff(actor, "Sanity");
+  }
+
+  async function ensureSanityItem(actor) {
+    return ensureCommonBuff(actor, "Sanity");
   }
 
   async function decrementUsesClamped(item, amount) {
@@ -395,6 +514,14 @@ async function whisperGMRequest() {
       return;
     }
 
+    let sanityItem = null;
+    try {
+      sanityItem = await ensureSanityItem(actor);
+    } catch (err) {
+      console.warn("Sanity Check: Sanity buff could not be created or repaired.", err);
+      ui.notifications.warn(err?.message || `${actor.name} could not create or repair the Sanity buff.`);
+    }
+
     // Get valid DC or wait for it (only once per pending run)
     let data = await getCheckData();
     if (!isValidCheckData(data)) {
@@ -441,9 +568,8 @@ async function whisperGMRequest() {
       }
 
       if (lossRolledTotal > 0) {
-        const sanityItem = findSanityItem(actor);
         if (!sanityItem) {
-          ui.notifications.warn(`${actor.name} has no Feature/Buff named "Sanity" with Uses configured.`);
+          ui.notifications.warn(`${actor.name} has no Common Buff named "Sanity" with Uses configured.`);
         } else {
           const dec = await decrementUsesClamped(sanityItem, lossRolledTotal);
           sanityLossApplied = dec.decApplied;

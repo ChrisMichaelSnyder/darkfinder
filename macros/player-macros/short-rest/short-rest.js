@@ -4,6 +4,7 @@
 // PF1e 11.8, Foundry v13.346
 //
 (function () {
+  const COMMON_BUFFS_PACK_ID = "darkfinder.common-buffs";
 
   /** Resolve actor/token
    * Prefer selected token; else fall back to game.user.character; else error.
@@ -18,12 +19,6 @@
 
     const token = actor.getActiveTokens()?.[0] || null;
     return { actor, token };
-  }
-
-  /** Find "Short Rest" ability/item with uses */
-  function findShortRestItem(actor) {
-    const target = "short rest";
-    return (actor.items ?? []).find(i => String(i.name ?? "").trim().toLowerCase() === target) || null;
   }
 
   function getUses(item) {
@@ -46,6 +41,136 @@
     // Foundry v13: stored in core settings as "core.rollMode"
     // values typically: "publicroll", "gmroll", "blindroll", "selfroll"
     return game.settings.get("core", "rollMode") || "publicroll";
+  }
+
+  /** -------- Common Buff helpers -------- */
+
+  function deepCloneData(value) {
+    if (foundry?.utils?.deepClone) return foundry.utils.deepClone(value);
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function flattenObject(object, prefix = "", result = {}) {
+    for (const [key, value] of Object.entries(object || {})) {
+      const path = prefix ? `${prefix}.${key}` : key;
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        flattenObject(value, path, result);
+        continue;
+      }
+      result[path] = value;
+    }
+    return result;
+  }
+
+  async function getCommonBuffTemplateData(buffName) {
+    const pack = game.packs.get(COMMON_BUFFS_PACK_ID);
+    if (!pack) {
+      throw new Error(`Could not find the ${COMMON_BUFFS_PACK_ID} compendium.`);
+    }
+
+    if (!pack.index?.size && typeof pack.getIndex === "function") {
+      await pack.getIndex();
+    }
+
+    const indexEntry = pack.index?.find?.((entry) => entry?.name === buffName);
+    if (!indexEntry?._id) {
+      throw new Error(`Could not find ${buffName} in ${pack.metadata?.label || COMMON_BUFFS_PACK_ID}.`);
+    }
+
+    const template = await pack.getDocument(indexEntry._id);
+    if (!template) {
+      throw new Error(`Could not load ${buffName} from ${pack.metadata?.label || COMMON_BUFFS_PACK_ID}.`);
+    }
+
+    const data = typeof template.toObject === "function"
+      ? template.toObject()
+      : deepCloneData(template);
+
+    delete data._id;
+    delete data.id;
+    delete data.folder;
+    delete data.sort;
+    delete data.pack;
+    return data;
+  }
+
+  function findCommonBuff(actor, buffName) {
+    const target = String(buffName || "").trim().toLowerCase();
+    return (actor.items ?? []).find((item) => (
+      item?.type === "buff" && String(item.name ?? "").trim().toLowerCase() === target
+    )) || null;
+  }
+
+  function buildCommonBuffRepairUpdate(templateData, currentUsesValue) {
+    const updateData = deepCloneData(templateData);
+    delete updateData._id;
+    delete updateData.id;
+    delete updateData.folder;
+    delete updateData.sort;
+    delete updateData.pack;
+    delete updateData.ownership;
+    delete updateData._stats;
+
+    if (!updateData.system) updateData.system = {};
+    if (!updateData.system.uses) updateData.system.uses = {};
+    updateData.system.uses.value = currentUsesValue;
+
+    return flattenObject(updateData);
+  }
+
+  async function resolveCreatedUsesMax(actor, itemData) {
+    const formula = String(itemData.system?.uses?.maxFormula || "").trim();
+    if (formula) {
+      try {
+        const roll = new Roll(formula, actor.getRollData?.() || actor.system || {});
+        await roll.evaluate();
+        const total = Math.floor(Number(roll.total));
+        if (Number.isFinite(total)) return Math.max(0, total);
+      } catch (err) {
+        console.warn("Short Rest: Could not evaluate Common Buff max uses formula.", { formula, err });
+      }
+    }
+
+    const fallback = Math.floor(Number(itemData.system?.uses?.max ?? NaN));
+    return Number.isFinite(fallback) ? Math.max(0, fallback) : null;
+  }
+
+  async function prepareCreatedCommonBuffData(actor, templateData, buffName) {
+    const data = deepCloneData(templateData);
+    const normalizedName = String(buffName || "").trim().toLowerCase();
+    if (normalizedName === "sanity" || normalizedName === "short rest") {
+      const max = await resolveCreatedUsesMax(actor, data);
+      if (max !== null) {
+        if (!data.system) data.system = {};
+        if (!data.system.uses) data.system.uses = {};
+        data.system.uses.max = max;
+        data.system.uses.value = max;
+      }
+    }
+    return data;
+  }
+
+  async function ensureCommonBuff(actor, buffName) {
+    const templateData = await getCommonBuffTemplateData(buffName);
+    const existing = findCommonBuff(actor, buffName);
+
+    if (!existing) {
+      const createData = await prepareCreatedCommonBuffData(actor, templateData, buffName);
+      const [created] = await actor.createEmbeddedDocuments("Item", [createData]);
+      return created || findCommonBuff(actor, buffName);
+    }
+
+    const currentValue = Number(existing.system?.uses?.value ?? 0) || 0;
+    await existing.update(buildCommonBuffRepairUpdate(templateData, currentValue));
+    return findCommonBuff(actor, buffName);
+  }
+
+  async function ensureShortRestItem(actor) {
+    return ensureCommonBuff(actor, "Short Rest");
+  }
+
+  function findShortRestItem(actor) {
+    return findCommonBuff(actor, "Short Rest");
   }
 
   /** Get class level with fallbacks */
@@ -96,10 +221,11 @@
   /** -------- Fatigue Buff -------- */
 
   function findFatigueBuff(actor) {
-    return (actor.items ?? []).find(i =>
-      i.type === "buff" &&
-      String(i.name ?? "").trim().toLowerCase() === "fatigue"
-    ) || null;
+    return findCommonBuff(actor, "Fatigue");
+  }
+
+  async function ensureFatigueBuff(actor) {
+    return ensureCommonBuff(actor, "Fatigue");
   }
 
   function getFatigueValue(fatigueBuff) {
@@ -149,13 +275,11 @@
   /** -------- Sanity Feature/Buff (Uses-based) -------- */
 
   function findSanityItem(actor) {
-    const target = "sanity";
-    return (actor.items ?? []).find(i => {
-      const nameOk = String(i.name ?? "").trim().toLowerCase() === target;
-      if (!nameOk) return false;
-      const max = Number(i.system?.uses?.max ?? NaN);
-      return Number.isFinite(max) && max >= 0;
-    }) || null;
+    return findCommonBuff(actor, "Sanity");
+  }
+
+  async function ensureSanityItem(actor) {
+    return ensureCommonBuff(actor, "Sanity");
   }
 
   function getSanityUses(item) {
@@ -816,9 +940,16 @@
     }
 
     // Gate: must have Short Rest uses remaining
-    const shortRest = findShortRestItem(actor);
+    let shortRest = null;
+    try {
+      shortRest = await ensureShortRestItem(actor);
+    } catch (err) {
+      console.warn("Short Rest: Short Rest buff could not be created or repaired.", err);
+      ui.notifications.error(err?.message || `${actor.name} could not create or repair the Short Rest buff.`);
+      return;
+    }
     if (!shortRest) {
-      ui.notifications.error(`${actor.name} does not have an ability/item named "Short Rest".`);
+      ui.notifications.error(`${actor.name} does not have a Common Buff named "Short Rest".`);
       return;
     }
 
@@ -836,10 +967,20 @@
     if (!choice) return;
 
     // Capture BEFORE values once
-    const fatigueBuff = findFatigueBuff(actor);
+    let fatigueBuff = null;
+    let sanityItem = null;
+    try {
+      fatigueBuff = await ensureFatigueBuff(actor);
+      sanityItem = await ensureSanityItem(actor);
+    } catch (err) {
+      console.warn("Short Rest: Recovery buffs could not be created or repaired.", err);
+      ui.notifications.warn(err?.message || "One or more recovery buffs could not be created or repaired.");
+      fatigueBuff = findFatigueBuff(actor);
+      sanityItem = findSanityItem(actor);
+    }
+
     const fatigueBefore = fatigueBuff ? getFatigueValue(fatigueBuff) : null;
 
-    const sanityItem = findSanityItem(actor);
     const sanityBefore = sanityItem ? getSanityUses(sanityItem).value : null;
 
     // 1) Apply the chosen main effect
