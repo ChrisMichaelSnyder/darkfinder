@@ -46,8 +46,7 @@ entries:
       +1 to an ability score of your choice at 4th, 8th, 12th, 16th, and 20th level.
     category: "Permanent"
     hideFromToken: true
-    limitedUses: "Per Day"
-    maxUsesFormula: "@attributes.hd.total"
+    limitedUses: "Unlimited"
     changes:
       - target: "Strength"
         formula: "min(1, floor(@attributes.hd.total / 4))"
