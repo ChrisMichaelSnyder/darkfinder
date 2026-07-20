@@ -591,12 +591,13 @@ entries:
       Duration: Concentration
       Saving Throw: None
       Description:
-      Summon one creature you have knowledge of. Pick one creature from the Monster Manual with a CR of 1/2 with a creature type of either Animal, Vermin, Fey, Undead, Magical Beast, Aberration, Outsider or Elemental. The chosen creature cannot have any templates or modifications beyond what is written in the creature's stat block.
+      Summon one creature you have knowledge of. Pick one creature from the Monster Manual with a CR of 1/2 with a creature type of either Animal, Vermin, Fey, Undead, Magical Beast, Aberration, Outsider or Elemental. The chosen creature cannot have any templates or modifications beyond what is written in the creature's stat block. This spell counts as a "Summon Monster" spell for the purposes of feats and class features.
       Creatures chosen for this spell core must be agreed upon with your GM prior to using them.
       Core Augments:
       (+2*): Increase the possible CR of the summoned creature by +1.
       (+4*): Summon an additional creature.
       (+4 ): Core Augments for this spell cost half as much.
+      (+0 ): This spell counts as a "Summon Nature's Ally" spell for the purposes of feats and class features instead of a "Summon Monster" spell.
  
   - icon: "icons/magic/nature/root-vine-entangle-foot-green.webp"
     text: |

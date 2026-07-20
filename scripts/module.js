@@ -1,4 +1,5 @@
 import { MODULE_ID, registerApi } from "./api.js";
+import { registerConcentrationTracker } from "./concentration-tracker.js";
 import { registerRandomLootSessionFeature } from "./random-loot-session.js";
 
 registerRandomLootSessionFeature();
@@ -10,6 +11,7 @@ Hooks.once("init", () => {
 Hooks.once("ready", () => {
   const api = registerApi();
   if (!api) return;
+  registerConcentrationTracker();
   registerRandomLootSessionFeature(api);
   registerSpellAttackChatLinkHook(api);
   console.log(`${MODULE_ID} | API registered.`);

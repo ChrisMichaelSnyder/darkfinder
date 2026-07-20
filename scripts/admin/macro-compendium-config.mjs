@@ -29,6 +29,13 @@ const playerMacros = [
     ownershipDefault: 2,
   }),
   createEntry({
+    id: "dfConcentr01",
+    name: "Concentration Tracker",
+    relativePath: "macros/player-macros/concentration-tracker/concentration-tracker.js",
+    img: "icons/svg/dice-target.svg",
+    ownershipDefault: 2,
+  }),
+  createEntry({
     id: "dfEndurance01",
     name: "Endurance Check",
     relativePath: "macros/player-macros/check-endurance/check-endurance.js",
