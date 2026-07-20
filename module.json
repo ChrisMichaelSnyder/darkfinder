@@ -5,7 +5,7 @@
   "version": "0.1.53",
   "url": "https://github.com/ChrisMichaelSnyder/darkfinder",
   "manifest": "https://raw.githubusercontent.com/ChrisMichaelSnyder/darkfinder/main/module.json",
-  "download": "https://github.com/ChrisMichaelSnyder/darkfinder/releases/download/v0.1.53/darkfinder.zip",
+  "download": "https://github.com/ChrisMichaelSnyder/darkfinder/archive/refs/tags/v0.1.53.zip",
   "authors": [
     {
       "name": "csnyd"
