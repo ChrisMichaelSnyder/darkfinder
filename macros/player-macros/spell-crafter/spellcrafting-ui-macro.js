@@ -8,6 +8,8 @@
 
   const STORAGE_KEY = `pf1-spellcrafting-last-books-${actor.id}`;
   const FLAG_SCOPE = "pf1-spellcrafting";
+  const CONCENTRATION_MODULE_ID = "darkfinder";
+  const CONCENTRATION_FLAG = "concentrationTracker";
 
   const spellbooks = getSpellbooks(actor);
   if (!spellbooks.length) {
@@ -2284,8 +2286,8 @@
       .trim();
   }
 
-  function buildPreparedAttributeText(core, totalSP) {
-    const resolvedAttributes = getResolvedSpellAttributes(core, totalSP);
+  function buildPreparedAttributeText(core, totalSP, resolvedAttributesOverride = null) {
+    const resolvedAttributes = resolvedAttributesOverride || getResolvedSpellAttributes(core, totalSP);
     const lines = [
       `<strong>SP Cost:</strong> ${escapeHtml(resolvedAttributes.spCost)}`,
       `<strong>School:</strong> ${escapeHtml(resolvedAttributes.school)}`,
@@ -2314,6 +2316,21 @@
     };
   }
 
+  function doesAugmentChangeDurationToConcentration(detail) {
+    if (detail?.type !== "core") return false;
+    const title = String(detail?.augment?.title || "").trim().replace(/\s*\([^)]+\)\s*$/, "").trim();
+    const text = normalizeDisplayedSpellText(`${detail?.augment?.title || ""} ${detail?.augment?.description || ""}`);
+    return /^duration$/i.test(title) && /\bconcentration\b/i.test(text);
+  }
+
+  function applyMechanicalAugmentOverrides(resolvedAttributes, augmentDetails) {
+    if (!resolvedAttributes || !Array.isArray(augmentDetails)) return resolvedAttributes;
+    if (augmentDetails.some((detail) => doesAugmentChangeDurationToConcentration(detail))) {
+      resolvedAttributes.duration = "Concentration";
+    }
+    return resolvedAttributes;
+  }
+
   function getButtonState(state) {
     const hasSpellbook = !!state.spellbookId;
     const hasCore = !!state.selectedCoreId;
@@ -2322,6 +2339,165 @@
       canCast: canAct && state.preparationMode === "spontaneous",
       canAdd: canAct && state.preparationMode === "prepared",
     };
+  }
+
+  function isConcentrationSpellData(itemData) {
+    return getObjectPath(itemData, ["system", "duration", "concentration"]) === true
+      || getItemActionEntries(itemData).some((action) => getObjectPath(action, ["duration", "concentration"]) === true)
+      || /(?:^|\n|\b)Duration:\s*Concentration\b/i.test(stripHtmlTags(getSpellDescription(itemData)));
+  }
+
+  function getStoredConcentrationEntries(targetActor) {
+    const payload = targetActor?.getFlag?.(CONCENTRATION_MODULE_ID, CONCENTRATION_FLAG) || {};
+    return Array.isArray(payload?.spells) ? payload.spells : [];
+  }
+
+  function calculateTotalConcentratedSP(spells) {
+    return (spells || []).reduce((sum, spell) => sum + Math.max(0, Number(spell?.spCost) || 0), 0);
+  }
+
+  function getPrivateConcentrationWarningRecipients(targetActor) {
+    const ids = new Set();
+    for (const user of game.users || []) {
+      if (!user?.active) continue;
+      if (user.isGM || targetActor?.testUserPermission?.(user, "OWNER")) {
+        ids.add(user.id);
+      }
+    }
+    return Array.from(ids);
+  }
+
+  function getBestConcentrationThreshold(targetActor) {
+    const spellbooksData = getObjectPath(targetActor, ["system", "attributes", "spells", "spellbooks"]);
+    const entries = spellbooksData && typeof spellbooksData === "object"
+      ? Object.values(spellbooksData).filter((entry) => entry && typeof entry === "object")
+      : [];
+    const bonuses = entries.length
+      ? entries.map((entry) => Number(getConcentrationBonusFromEntry(targetActor, entry)) || 0)
+      : [0];
+    return Math.max(...bonuses) + 1;
+  }
+
+  function parseConcentrationNumericValue(value) {
+    if (value == null || value === "") return null;
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+    if (typeof value === "string") {
+      const text = value.trim();
+      if (!text) return null;
+      return /[-+]?\d/.test(text) ? parseBonusNumericValue(text) : null;
+    }
+    if (typeof value === "object") {
+      for (const key of ["total", "value", "mod", "bonus", "current"]) {
+        const parsed = parseConcentrationNumericValue(value[key]);
+        if (parsed != null) return parsed;
+      }
+    }
+    return null;
+  }
+
+  function getConcentrationBonusFromEntry(targetActor, entry) {
+    const directPaths = [
+      ["concentration", "total"],
+      ["concentration", "value"],
+      ["concentration", "bonus"],
+      ["concentration"],
+      ["concentrationBonus", "total"],
+      ["concentrationBonus", "value"],
+      ["concentrationBonus"],
+      ["skill", "concentration"],
+      ["skills", "concentration"],
+      ["casting", "concentration"],
+      ["spellcasting", "concentration"],
+    ];
+    for (const path of directPaths) {
+      const parsed = parseConcentrationNumericValue(getObjectPath(entry, path));
+      if (parsed != null) return parsed;
+    }
+
+    const abilityKey = normalizeAbilityKey(
+      getObjectPath(entry, ["ability"])
+      || getObjectPath(entry, ["abilityKey"])
+      || getObjectPath(entry, ["casting", "ability"])
+      || getObjectPath(entry, ["spellcastingAbility"]),
+    );
+    const abilityMod = abilityKey ? getActorAbilityModifier(targetActor, abilityKey) : null;
+    const casterLevel = parseConcentrationNumericValue(
+      getObjectPath(entry, ["cl", "total"])
+      ?? getObjectPath(entry, ["cl", "value"])
+      ?? getObjectPath(entry, ["cl"])
+      ?? getObjectPath(entry, ["casterLevel", "total"])
+      ?? getObjectPath(entry, ["casterLevel"])
+      ?? getObjectPath(entry, ["level"])
+    );
+    if (abilityMod != null || casterLevel != null) return Number(abilityMod || 0) + Number(casterLevel || 0);
+
+    const foundPath = findNumericLeafPath(entry, {
+      include: [/concentration/i],
+      exclude: [/max/i, /base/i, /temp/i, /used/i, /spent/i, /cost/i],
+    });
+    return foundPath ? Number(parseConcentrationNumericValue(getObjectPath(entry, foundPath)) || 0) : 0;
+  }
+
+  async function maybeSendSpontaneousConcentrationWarning(targetActor, spells) {
+    const threshold = getBestConcentrationThreshold(targetActor);
+    const totalSP = calculateTotalConcentratedSP(spells);
+    if (totalSP <= threshold) return;
+
+    const recipients = getPrivateConcentrationWarningRecipients(targetActor);
+    if (!recipients.length) return;
+
+    await ChatMessage.create({
+      user: game.user.id,
+      speaker: ChatMessage.getSpeaker({ actor: targetActor }),
+      whisper: recipients,
+      content: `
+        <div class="darkfinder-concentration-warning" style="padding:0.45rem 0.55rem;">
+          <strong>${escapeHtml(targetActor.name)} is over their SP Threshold.</strong>
+          <div style="margin-top:0.25rem;">They need to make Concentration checks at the end of their turns.</div>
+          <div style="margin-top:0.25rem;font-weight:700;color:#8f2f23;">Total Concentrated SP: ${totalSP} / Threshold: ${threshold}</div>
+        </div>
+      `,
+      flags: {
+        [CONCENTRATION_MODULE_ID]: {
+          concentrationTrackerWarning: true,
+        },
+      },
+    });
+  }
+
+  async function trackSpontaneousConcentrationSpell(targetActor, spellItem, itemData) {
+    const sourceData = itemData || spellItem;
+    if (!isConcentrationSpellData(sourceData)) return false;
+    if (!targetActor?.setFlag) return false;
+
+    const spells = getStoredConcentrationEntries(targetActor);
+    const itemUuid = String(spellItem?.uuid || getObjectPath(sourceData, ["flags", FLAG_SCOPE, "sourceUuid"]) || "");
+    const spellName = getDisplaySpellName(spellItem?.name || sourceData?.name || "") || "Concentration Spell";
+    const spCost = Math.max(0, Number(getSpellPointCost(sourceData)) || 0);
+    const recentDuplicate = spells.find((spell) => {
+      const isRecent = Date.now() - Number(spell?.addedAt || 0) < 3000;
+      if (!isRecent) return false;
+      if (itemUuid && String(spell?.itemUuid || "") === itemUuid) return true;
+      return getDisplaySpellName(spell?.name || "") === spellName
+        && Math.max(0, Number(spell?.spCost) || 0) === spCost;
+    });
+    if (recentDuplicate) return false;
+
+    const addedEntry = {
+      id: foundry?.utils?.randomID ? foundry.utils.randomID(16) : Math.random().toString(36).slice(2),
+      name: spellName,
+      img: spellItem?.img || sourceData?.img || "icons/svg/mystery-man.svg",
+      spCost,
+      itemUuid,
+      messageId: "",
+      addedAt: Date.now(),
+    };
+    const nextSpells = [...spells, addedEntry];
+    await targetActor.setFlag(CONCENTRATION_MODULE_ID, CONCENTRATION_FLAG, { spells: nextSpells });
+    Hooks.callAll(`${CONCENTRATION_MODULE_ID}.concentrationTrackerUpdated`, targetActor, nextSpells, addedEntry);
+    await maybeSendSpontaneousConcentrationWarning(targetActor, nextSpells);
+    ui.notifications?.info?.(`${targetActor.name} is now concentrating on ${spellName} (${spCost} SP).`);
+    return true;
   }
 
   function getSignedCostLabel(cost) {
@@ -2414,8 +2590,8 @@
   }
 
   function buildPreparedSpellDescriptionHtml(actor, spellbookId, core, totalSP, details, spellName, options = {}) {
-    const resolvedAttributes = getResolvedSpellAttributes(core, totalSP);
-    const attributeText = buildPreparedAttributeText(core, totalSP);
+    const resolvedAttributes = options.resolvedAttributes || applyMechanicalAugmentOverrides(getResolvedSpellAttributes(core, totalSP), details);
+    const attributeText = buildPreparedAttributeText(core, totalSP, resolvedAttributes);
     const descriptionBody = buildCastDescriptionText(core);
     const spellAttackButtonHtml = options.includeSpellAttackButton === false
       ? ""
@@ -2447,7 +2623,7 @@
 
     const totalSP = calculateTotalSP(actor, state);
     const details = getSelectedAugmentDetails(actor, state, "spell");
-    const resolvedAttributes = getResolvedSpellAttributes(core, totalSP);
+    const resolvedAttributes = applyMechanicalAugmentOverrides(getResolvedSpellAttributes(core, totalSP), details);
     return buildPreparedSpellDescriptionHtml(
       actor,
       state.spellbookId,
@@ -2475,7 +2651,7 @@
       throw new Error("The selected spellbook could not be matched to a valid PF1 spellbook entry.");
     }
 
-    const resolvedAttributes = getResolvedSpellAttributes(core, totalSP);
+    const resolvedAttributes = applyMechanicalAugmentOverrides(getResolvedSpellAttributes(core, totalSP), augmentDetails);
     resolvedAttributes.name = String(options.customName || "").trim() || resolvedAttributes.name;
     const spellbookName = spellbooks.find((book) => String(book.id) === String(canonicalSpellbookKey))?.name
       || getSpellbookNameFromAttributes(actor, canonicalSpellbookKey)
@@ -2538,7 +2714,7 @@
     }
     sanitizeGeneratedSpellTemplate(itemData, totalSP);
     ensureGeneratedPrimaryAction(itemData);
-    setObjectPathValue(itemData, ["system", "description", "value"], buildPreparedSpellDescriptionHtml(actor, canonicalSpellbookKey, core, totalSP, augmentDetails, resolvedAttributes.name));
+    setObjectPathValue(itemData, ["system", "description", "value"], buildPreparedSpellDescriptionHtml(actor, canonicalSpellbookKey, core, totalSP, augmentDetails, resolvedAttributes.name, { resolvedAttributes }));
     populateSpellItemAttributes(itemData, resolvedAttributes, totalSP, sourceActionEntries);
     assignSpellbookReference(actor, itemData, canonicalSpellbookKey, spellbookName);
 
@@ -2567,16 +2743,19 @@
 
       if (typeof createdSpell.use === "function" && actionId) {
         await createdSpell.use({ actionId, token, skipDialog: true });
+        await trackSpontaneousConcentrationSpell(actor, createdSpell, itemData);
         return true;
       }
 
       if (typeof createdSpell.use === "function") {
         await createdSpell.use({ token, skipDialog: true });
+        await trackSpontaneousConcentrationSpell(actor, createdSpell, itemData);
         return true;
       }
 
       if (defaultAction?.use && typeof defaultAction.use === "function") {
         await defaultAction.use({ token, skipDialog: true });
+        await trackSpontaneousConcentrationSpell(actor, createdSpell, itemData);
         return true;
       }
 
@@ -2589,6 +2768,7 @@
           actionCount: getItemActionEntries(createdSpell).length,
         });
         await createdSpell.displayCard(undefined, { token });
+        await trackSpontaneousConcentrationSpell(actor, createdSpell, itemData);
         return true;
       }
 

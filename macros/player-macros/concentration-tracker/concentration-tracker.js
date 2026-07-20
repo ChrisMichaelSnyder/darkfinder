@@ -232,9 +232,10 @@
         .df-concentration-empty { color:#555; font-style:italic; font-size:0.92rem; }
         .df-concentration-audit-list { display:flex; flex-direction:column; gap:0.45rem; flex:1 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden; padding-right:0.2rem; }
         .df-concentration-audit-row { display:grid; grid-template-columns:minmax(0, 1fr); gap:0.3rem; align-items:start; background:rgba(236,233,225,0.82); border:1px solid #9f9787; border-radius:4px; padding:0.55rem 0.65rem; font-size:0.88rem; }
-        .df-concentration-audit-name { font-weight:900; overflow-wrap:anywhere; }
+        .df-concentration-audit-name { font-size:1.04rem; font-weight:900; line-height:1.15; overflow-wrap:anywhere; }
         .df-concentration-audit-metrics { display:flex; flex-wrap:wrap; gap:0.75rem; }
         .df-concentration-audit-metric { white-space:nowrap; font-weight:800; color:#3b3528; }
+        .df-concentration-audit-over-threshold { white-space:nowrap; font-weight:900; color:${THRESHOLD_RED}; }
         .df-concentration-audit-spells { min-width:0; display:grid; gap:0.18rem; color:#2f2d28; }
         .df-concentration-audit-spell { padding-left:1rem; overflow-wrap:anywhere; }
       </style>
@@ -297,6 +298,9 @@
         const spells = getStoredSpells(targetActor);
         const totalSP = calculateTotalSP(spells);
         const concentration = getBestConcentrationData(targetActor);
+        const overThresholdHtml = totalSP > concentration.threshold
+          ? "<span class=\"df-concentration-audit-over-threshold\">[OVER THRESHOLD]</span>"
+          : "";
         const spellHtml = spells.length
           ? spells.map((spell) => (
             `<div class="df-concentration-audit-spell">${escapeHtml(normalizeSpellName(spell.name) || "Spell")} (${escapeHtml(String(Number(spell.spCost) || 0))} SP)</div>`
@@ -308,6 +312,7 @@
             <div class="df-concentration-audit-metrics">
               <span class="df-concentration-audit-metric">Total: ${totalSP} SP</span>
               <span class="df-concentration-audit-metric">Threshold: ${concentration.threshold}</span>
+              ${overThresholdHtml}
             </div>
             <div class="df-concentration-audit-spells">${spellHtml}</div>
           </div>

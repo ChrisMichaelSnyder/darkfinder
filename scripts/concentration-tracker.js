@@ -337,12 +337,24 @@ function getStoredConcentrationEntries(actor) {
 async function addConcentrationEntry(actor, entry) {
   if (!actor?.setFlag) return;
   const spells = getStoredConcentrationEntries(actor);
+  const normalizedName = normalizeSpellName(entry.name) || "Concentration Spell";
+  const normalizedSpCost = Math.max(0, Number(entry.spCost) || 0);
+  const normalizedItemUuid = normalizeText(entry.itemUuid);
+  const recentDuplicate = spells.find((spell) => {
+    const isRecent = Date.now() - Number(spell?.addedAt || 0) < 3000;
+    if (!isRecent) return false;
+    if (normalizedItemUuid && normalizeText(spell?.itemUuid) === normalizedItemUuid) return true;
+    return normalizeSpellName(spell?.name) === normalizedName
+      && Math.max(0, Number(spell?.spCost) || 0) === normalizedSpCost;
+  });
+  if (recentDuplicate) return { entry: recentDuplicate, added: false };
+
   const addedEntry = {
     id: foundry?.utils?.randomID ? foundry.utils.randomID(16) : Math.random().toString(36).slice(2),
-    name: normalizeSpellName(entry.name) || "Concentration Spell",
+    name: normalizedName,
     img: normalizeText(entry.img) || "icons/svg/mystery-man.svg",
-    spCost: Math.max(0, Number(entry.spCost) || 0),
-    itemUuid: normalizeText(entry.itemUuid),
+    spCost: normalizedSpCost,
+    itemUuid: normalizedItemUuid,
     messageId: normalizeText(entry.messageId),
     addedAt: Date.now(),
   };
@@ -352,7 +364,7 @@ async function addConcentrationEntry(actor, entry) {
   ];
   await actor.setFlag(MODULE_ID, CONCENTRATION_FLAG, { spells: nextSpells });
   Hooks.callAll(`${MODULE_ID}.concentrationTrackerUpdated`, actor, nextSpells, addedEntry);
-  return addedEntry;
+  return { entry: addedEntry, added: true };
 }
 
 function getPrivateWarningRecipients(actor) {
@@ -413,13 +425,14 @@ async function maybeTrackConcentrationMessage(message) {
   const name = normalizeSpellName(item?.name) || parseSpellNameFromContent(content);
   const spCost = getSpellPointCost(item, content);
   const img = parseSpellImageFromContent(content) || getItemImage(item);
-  await addConcentrationEntry(actor, {
+  const trackResult = await addConcentrationEntry(actor, {
     name,
     spCost,
     img,
     itemUuid: item?.uuid || "",
     messageId: message.id || "",
   });
+  if (!trackResult?.added) return;
 
   const spells = getStoredConcentrationEntries(actor);
   await maybeSendThresholdWarning(actor, spells);
