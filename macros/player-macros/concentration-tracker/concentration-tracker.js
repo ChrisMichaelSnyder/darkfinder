@@ -69,7 +69,9 @@
   }
 
   async function saveStoredSpells(targetActor, spells) {
-    await targetActor.setFlag(MODULE_ID, FLAG_KEY, { spells: spells || [] });
+    const nextSpells = spells || [];
+    await targetActor.setFlag(MODULE_ID, FLAG_KEY, { spells: nextSpells });
+    Hooks.callAll(UPDATE_HOOK, targetActor, nextSpells);
   }
 
   function calculateTotalSP(spells) {
@@ -382,11 +384,12 @@
 
   async function rollConcentrationCheck(targetActor, token) {
     const concentration = getBestConcentrationData(targetActor);
+    const totalSP = calculateTotalSP(getStoredSpells(targetActor));
     const roll = new Roll("1d20 + @bonus", { bonus: concentration.concentrationBonus });
     await roll.evaluate();
 
     const d20Result = Number(roll.dice?.[0]?.total ?? roll.terms?.find?.((term) => term?.faces === 20)?.total ?? 0);
-    const isSuccess = Number(roll.total || 0) >= concentration.threshold;
+    const isSuccess = Number(roll.total || 0) >= totalSP;
     const badge = isSuccess
       ? `<span style="display:inline-block;padding:8px 24px;background-color:${GREEN};color:#ffffff;font-size:1.8em;font-weight:900;border-radius:8px;">SUCCESS</span>`
       : `<span style="display:inline-block;padding:8px 24px;background-color:${RED};color:#000000;font-size:1.8em;font-weight:900;border-radius:8px;">FAIL</span>`;
@@ -405,7 +408,7 @@
               </div>
             </div>
           </div>
-          <div style="margin-top:6px;text-align:center;font-weight:700;">SP Threshold: ${concentration.threshold}</div>
+          <div style="margin-top:6px;text-align:center;font-weight:700;">Total Concentrated SP: ${totalSP}</div>
           <div style="text-align:center;margin-top:10px;">${badge}</div>
         </section>
       </div>
@@ -454,6 +457,20 @@
     root.find(`.df-concentration-root[data-df-concentration-actor-id="${targetActor.id}"]`).replaceWith(nextRoot);
   }
 
+  function refreshAuditDialog(root) {
+    const nextRoot = $(buildAuditContent()).filter(".df-concentration-root");
+    root.find(".df-concentration-root").replaceWith(nextRoot);
+  }
+
+  function didConcentrationFlagChange(changes) {
+    if (!changes || typeof changes !== "object") return false;
+    if (getObjectPath(changes, ["flags", MODULE_ID, FLAG_KEY])) return true;
+    return Object.entries(changes).some(([key, value]) => (
+      String(key || "").includes(`flags.${MODULE_ID}.${FLAG_KEY}`)
+      || didConcentrationFlagChange(value)
+    ));
+  }
+
   function bindAuditEvents(html, dialog) {
     const root = html.closest(".app.window-app, .dialog");
     root.off("click", ".df-concentration-close").on("click", ".df-concentration-close", (event) => {
@@ -464,6 +481,7 @@
 
   function renderActorDialog(targetActor, token) {
     let updateHandler = null;
+    let actorUpdateHandler = null;
     const dialog = new Dialog({
       title: "Concentration Tracker",
       content: buildActorContent(targetActor),
@@ -473,6 +491,7 @@
       resizable: true,
       close: () => {
         if (updateHandler) Hooks.off(UPDATE_HOOK, updateHandler);
+        if (actorUpdateHandler) Hooks.off("updateActor", actorUpdateHandler);
       },
       render: function(html) {
         applyDialogSizing(html, dialog, 505, 720);
@@ -485,6 +504,13 @@
             bindActorEvents(html, dialog, targetActor, token);
           };
           Hooks.on(UPDATE_HOOK, updateHandler);
+          actorUpdateHandler = (updatedActor, changes) => {
+            if (String(updatedActor?.id || "") !== String(targetActor.id || "")) return;
+            if (!didConcentrationFlagChange(changes)) return;
+            refreshActorDialog(root, targetActor);
+            bindActorEvents(html, dialog, targetActor, token);
+          };
+          Hooks.on("updateActor", actorUpdateHandler);
         }
       },
     });
@@ -492,6 +518,8 @@
   }
 
   function renderAuditDialog() {
+    let updateHandler = null;
+    let actorUpdateHandler = null;
     const dialog = new Dialog({
       title: "Concentration Audit",
       content: buildAuditContent(),
@@ -499,9 +527,28 @@
       width: 600,
       height: 760,
       resizable: true,
+      close: () => {
+        if (updateHandler) Hooks.off(UPDATE_HOOK, updateHandler);
+        if (actorUpdateHandler) Hooks.off("updateActor", actorUpdateHandler);
+      },
       render: function(html) {
         applyDialogSizing(html, dialog, 600, 760);
         bindAuditEvents(html, dialog);
+        if (!updateHandler) {
+          const root = html.closest(".app.window-app, .dialog");
+          updateHandler = () => {
+            refreshAuditDialog(root);
+            bindAuditEvents(html, dialog);
+          };
+          actorUpdateHandler = (updatedActor, changes) => {
+            if (!updatedActor?.hasPlayerOwner) return;
+            if (!didConcentrationFlagChange(changes)) return;
+            refreshAuditDialog(root);
+            bindAuditEvents(html, dialog);
+          };
+          Hooks.on(UPDATE_HOOK, updateHandler);
+          Hooks.on("updateActor", actorUpdateHandler);
+        }
       },
     });
     dialog.render(true);
