@@ -4,6 +4,7 @@
   const UPDATE_HOOK = `${MODULE_ID}.concentrationTrackerUpdated`;
   const GREEN = "#43a047";
   const RED = "#ff4c4c";
+  const THRESHOLD_RED = "#ff1f1f";
 
   const selectedToken = canvas.tokens.controlled[0] || null;
   const actor = selectedToken?.actor || game.user.character || null;
@@ -212,9 +213,11 @@
         .df-concentration-panel { flex:0 0 auto; border:1px solid #7d7668; background:rgba(201,196,184,0.94); padding:0.9rem 1rem; border-radius:8px; overflow:hidden; box-shadow:0 1px 0 rgba(255,255,255,0.18) inset; box-sizing:border-box; }
         .df-concentration-panel h3 { margin:0 0 0.65rem; padding-bottom:0.35rem; border-bottom:1px solid #b85b4d; font-size:1.05rem; font-weight:800; color:#2c2a25; }
         .df-concentration-summary { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:0.7rem; }
-        .df-concentration-stat { background:rgba(223,218,205,0.95); border:1px solid #8f8674; border-radius:6px; padding:0.6rem 0.75rem; box-sizing:border-box; }
-        .df-concentration-label { display:block; font-size:0.72rem; font-weight:900; letter-spacing:0.06em; text-transform:uppercase; color:#5a554a; }
-        .df-concentration-value { display:block; margin-top:0.2rem; font-size:1.65rem; font-weight:900; color:#191816; line-height:1; }
+        .df-concentration-stat { background:rgba(223,218,205,0.95); border:1px solid #8f8674; border-radius:6px; padding:0.6rem 0.75rem; box-sizing:border-box; text-align:center; }
+        .df-concentration-label { display:block; font-size:0.72rem; font-weight:900; letter-spacing:0.06em; text-transform:uppercase; color:#5a554a; text-align:center; }
+        .df-concentration-value { display:block; margin-top:0.2rem; font-size:1.65rem; font-weight:900; color:#191816; line-height:1; text-align:center; }
+        .df-concentration-value.over-threshold { color:${THRESHOLD_RED}; }
+        .df-concentration-threshold-tag { display:block; margin-top:0.25rem; font-size:0.72rem; font-weight:900; letter-spacing:0.04em; color:${THRESHOLD_RED}; text-align:center; }
         .df-concentration-scroll-panel { display:flex; flex-direction:column; flex:1 1 auto; min-height:0; height:100%; }
         .df-concentration-list { display:flex; flex-direction:column; gap:0.5rem; flex:1 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden; padding-right:0.2rem; }
         .df-concentration-row { display:grid; grid-template-columns:auto minmax(0, 1fr) auto auto; align-items:center; gap:0.65rem; background:rgba(236,233,225,0.82); padding:0.5rem 0.65rem; border-radius:4px; color:#111; border:1px solid #9f9787; }
@@ -240,7 +243,11 @@
     const spells = getStoredSpells(targetActor);
     const totalSP = calculateTotalSP(spells);
     const concentration = getBestConcentrationData(targetActor);
-    const overClass = totalSP > concentration.threshold ? " style=\"color:#8f2f23;\"" : "";
+    const isOverThreshold = totalSP > concentration.threshold;
+    const overClass = isOverThreshold ? " over-threshold" : "";
+    const overThresholdTag = isOverThreshold
+      ? "<span class=\"df-concentration-threshold-tag\">[OVER THRESHOLD]</span>"
+      : "";
     const rows = spells.length
       ? spells.map((spell) => `
         <div class="df-concentration-row">
@@ -259,8 +266,9 @@
           <h3>Concentration Tracker</h3>
           <div class="df-concentration-summary">
             <div class="df-concentration-stat">
-              <span class="df-concentration-label">Total SP Being Concentrated On</span>
-              <span class="df-concentration-value"${overClass}>${totalSP}</span>
+              <span class="df-concentration-label">Total Concentrated SP</span>
+              <span class="df-concentration-value${overClass}">${totalSP}</span>
+              ${overThresholdTag}
             </div>
             <div class="df-concentration-stat">
               <span class="df-concentration-label">SP Threshold</span>

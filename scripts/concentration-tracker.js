@@ -33,6 +33,134 @@ function normalizeSpellName(value) {
     .trim();
 }
 
+function parseNumericValue(value) {
+  if (value == null || value === "") return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string") {
+    const match = value.trim().match(/[-+]?\d+(?:\.\d+)?/);
+    return match ? Number(match[0]) : null;
+  }
+  if (typeof value === "object") {
+    for (const key of ["total", "value", "mod", "bonus", "current"]) {
+      const parsed = parseNumericValue(value[key]);
+      if (parsed != null) return parsed;
+    }
+  }
+  return null;
+}
+
+function normalizeAbilityKey(value) {
+  const normalized = normalizeText(value).toLowerCase();
+  const aliases = {
+    str: "str",
+    strength: "str",
+    dex: "dex",
+    dexterity: "dex",
+    con: "con",
+    constitution: "con",
+    int: "int",
+    intelligence: "int",
+    wis: "wis",
+    wisdom: "wis",
+    cha: "cha",
+    charisma: "cha",
+  };
+  return aliases[normalized] || null;
+}
+
+function getActorAbilityModifier(actor, abilityKey) {
+  const normalizedKey = normalizeAbilityKey(abilityKey);
+  if (!normalizedKey) return null;
+  const ability = getObjectPath(actor, ["system", "abilities", normalizedKey]);
+  const explicit = parseNumericValue(ability?.mod ?? ability?.modifier ?? ability?.totalMod ?? ability?.abilityMod);
+  if (explicit != null) return explicit;
+  const score = parseNumericValue(ability?.total ?? ability?.value ?? ability?.score);
+  return score == null ? null : Math.floor((score - 10) / 2);
+}
+
+function findNumericLeafPath(object, options, currentPath = []) {
+  if (!object || typeof object !== "object") return null;
+  for (const [key, value] of Object.entries(object)) {
+    const path = [...currentPath, key];
+    const keyText = String(key || "");
+    if (options.exclude?.some((pattern) => pattern.test(keyText))) continue;
+    const parsed = parseNumericValue(value);
+    if (parsed != null && options.include?.some((pattern) => pattern.test(keyText))) return path;
+    if (value && typeof value === "object") {
+      const nested = findNumericLeafPath(value, options, path);
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
+function getConcentrationBonusFromSpellbook(actor, entry) {
+  const directPaths = [
+    ["concentration", "total"],
+    ["concentration", "value"],
+    ["concentration", "bonus"],
+    ["concentration"],
+    ["concentrationBonus", "total"],
+    ["concentrationBonus", "value"],
+    ["concentrationBonus"],
+    ["skill", "concentration"],
+    ["skills", "concentration"],
+    ["casting", "concentration"],
+    ["spellcasting", "concentration"],
+  ];
+  for (const path of directPaths) {
+    const parsed = parseNumericValue(getObjectPath(entry, path));
+    if (parsed != null) return parsed;
+  }
+
+  const abilityKey = normalizeAbilityKey(
+    getObjectPath(entry, ["ability"])
+    || getObjectPath(entry, ["abilityKey"])
+    || getObjectPath(entry, ["casting", "ability"])
+    || getObjectPath(entry, ["spellcastingAbility"]),
+  );
+  const abilityMod = abilityKey ? getActorAbilityModifier(actor, abilityKey) : null;
+  const casterLevel = parseNumericValue(
+    getObjectPath(entry, ["cl", "total"])
+    ?? getObjectPath(entry, ["cl", "value"])
+    ?? getObjectPath(entry, ["cl"])
+    ?? getObjectPath(entry, ["casterLevel", "total"])
+    ?? getObjectPath(entry, ["casterLevel"])
+    ?? getObjectPath(entry, ["level"]),
+  );
+  if (abilityMod != null || casterLevel != null) return Number(abilityMod || 0) + Number(casterLevel || 0);
+
+  const foundPath = findNumericLeafPath(entry, {
+    include: [/concentration/i],
+    exclude: [/max/i, /base/i, /temp/i, /used/i, /spent/i, /cost/i],
+  });
+  if (foundPath) {
+    const parsed = parseNumericValue(getObjectPath(entry, foundPath));
+    if (parsed != null) return parsed;
+  }
+
+  return 0;
+}
+
+function getBestConcentrationData(actor) {
+  const spellbooks = getObjectPath(actor, ["system", "attributes", "spells", "spellbooks"]);
+  const entries = spellbooks && typeof spellbooks === "object"
+    ? Object.values(spellbooks).filter((entry) => entry && typeof entry === "object")
+    : [];
+  const bonuses = entries.length
+    ? entries.map((entry) => getConcentrationBonusFromSpellbook(actor, entry))
+    : [0];
+  const concentrationBonus = Math.max(...bonuses.map((bonus) => Number(bonus) || 0));
+  return {
+    concentrationBonus,
+    threshold: concentrationBonus + 1,
+  };
+}
+
+function calculateTotalConcentratedSP(spells) {
+  return (spells || []).reduce((sum, spell) => sum + Math.max(0, Number(spell?.spCost) || 0), 0);
+}
+
 function isConcentrationDurationValue(value) {
   if (value == null || value === "") return false;
   if (typeof value === "boolean") return value;
@@ -227,6 +355,48 @@ async function addConcentrationEntry(actor, entry) {
   return addedEntry;
 }
 
+function getPrivateWarningRecipients(actor) {
+  const ids = new Set();
+  for (const user of game.users || []) {
+    if (!user?.active) continue;
+    if (user.isGM) {
+      ids.add(user.id);
+      continue;
+    }
+    if (actor?.testUserPermission?.(user, "OWNER")) {
+      ids.add(user.id);
+    }
+  }
+  return Array.from(ids);
+}
+
+async function maybeSendThresholdWarning(actor, spells) {
+  const concentration = getBestConcentrationData(actor);
+  const totalSP = calculateTotalConcentratedSP(spells);
+  if (totalSP <= concentration.threshold) return;
+
+  const recipients = getPrivateWarningRecipients(actor);
+  if (!recipients.length) return;
+
+  await ChatMessage.create({
+    user: game.user.id,
+    speaker: ChatMessage.getSpeaker({ actor }),
+    whisper: recipients,
+    content: `
+      <div class="darkfinder-concentration-warning" style="padding:0.45rem 0.55rem;">
+        <strong>${actor.name} is over their SP Threshold.</strong>
+        <div style="margin-top:0.25rem;">They need to make Concentration checks at the end of their turns.</div>
+        <div style="margin-top:0.25rem;font-weight:700;color:#8f2f23;">Total Concentrated SP: ${totalSP} / Threshold: ${concentration.threshold}</div>
+      </div>
+    `,
+    flags: {
+      [MODULE_ID]: {
+        concentrationTrackerWarning: true,
+      },
+    },
+  });
+}
+
 async function maybeTrackConcentrationMessage(message) {
   const authorId = String(message.author?.id || message.user?.id || message.user || "");
   if (authorId && authorId !== String(game.user.id)) return;
@@ -250,6 +420,9 @@ async function maybeTrackConcentrationMessage(message) {
     itemUuid: item?.uuid || "",
     messageId: message.id || "",
   });
+
+  const spells = getStoredConcentrationEntries(actor);
+  await maybeSendThresholdWarning(actor, spells);
 
   ui.notifications?.info?.(`${actor.name} is now concentrating on ${name || "a spell"} (${spCost} SP).`);
 }
