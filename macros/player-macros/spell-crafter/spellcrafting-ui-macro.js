@@ -2315,10 +2315,11 @@
   }
 
   function doesAugmentChangeDurationToConcentration(detail) {
-    if (detail?.type !== "core") return false;
     const title = String(detail?.augment?.title || "").trim().replace(/\s*\([^)]+\)\s*$/, "").trim();
-    const text = normalizeDisplayedSpellText(`${detail?.augment?.title || ""} ${detail?.augment?.description || ""}`);
-    return /^duration$/i.test(title) && /\bconcentration\b/i.test(text);
+    const text = normalizeDisplayedSpellText(`${detail?.augment?.title || ""} ${detail?.augment?.description || ""}`).toLowerCase();
+    return (/^duration$/i.test(title) || text.includes("duration"))
+      && text.includes("concentration")
+      && !/\bfrom\s+["']?concentration["']?\b/i.test(text);
   }
 
   function applyMechanicalAugmentOverrides(resolvedAttributes, augmentDetails) {
