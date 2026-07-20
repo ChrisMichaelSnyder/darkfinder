@@ -26,6 +26,13 @@ function normalizeText(value) {
   return String(value || "").trim();
 }
 
+function normalizeSpellName(value) {
+  return normalizeText(value)
+    .replace(/\s*\((?:use|core|augment)\)\s*$/i, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 function isConcentrationDurationValue(value) {
   if (value == null || value === "") return false;
   if (typeof value === "boolean") return value;
@@ -63,11 +70,19 @@ function itemHasConcentrationDuration(item) {
 }
 
 function parseSpellPointCostFromText(text) {
-  const match = String(text || "").match(/\b(?:SP Cost|Spell Point Cost|Spell Points?|SP)\s*:?\s*(\d+)\b/i);
-  return match ? Number(match[1]) : null;
+  const source = String(text || "");
+  const costMatch = source.match(/\b(?:SP Cost|Spell Point Cost)\s*:?\s*(\d+)\b/i);
+  if (costMatch) return Number(costMatch[1]);
+
+  const genericMatch = source.match(/\bSP\s+Cost\s*:?\s*(\d+)\b/i)
+    || source.match(/\bCost\s*:?\s*(\d+)\s*SP\b/i);
+  return genericMatch ? Number(genericMatch[1]) : null;
 }
 
 function getSpellPointCost(item, fallbackText = "") {
+  const parsedCardCost = parseSpellPointCostFromText(fallbackText);
+  if (parsedCardCost != null) return Math.max(0, parsedCardCost);
+
   if (item) {
     const paths = [
       ["system", "spellPointCost"],
@@ -92,6 +107,23 @@ function getItemImage(item) {
   return item?.img || getObjectPath(item, ["data", "img"]) || "icons/svg/mystery-man.svg";
 }
 
+function parseSpellImageFromContent(content) {
+  const root = document.createElement("div");
+  root.innerHTML = String(content || "");
+  const selectors = [
+    ".card-header img",
+    "header img",
+    ".item-image",
+    ".item-img",
+    "img",
+  ];
+  for (const selector of selectors) {
+    const src = normalizeText(root.querySelector(selector)?.getAttribute("src"));
+    if (src) return src;
+  }
+  return "";
+}
+
 function parseSpellNameFromContent(content) {
   const root = document.createElement("div");
   root.innerHTML = String(content || "");
@@ -106,7 +138,7 @@ function parseSpellNameFromContent(content) {
   ];
   for (const selector of selectors) {
     const node = root.querySelector(selector);
-    const text = normalizeText(node?.textContent);
+    const text = normalizeSpellName(node?.textContent);
     if (text) return text;
   }
   return "";
@@ -177,19 +209,22 @@ function getStoredConcentrationEntries(actor) {
 async function addConcentrationEntry(actor, entry) {
   if (!actor?.setFlag) return;
   const spells = getStoredConcentrationEntries(actor);
+  const addedEntry = {
+    id: foundry?.utils?.randomID ? foundry.utils.randomID(16) : Math.random().toString(36).slice(2),
+    name: normalizeSpellName(entry.name) || "Concentration Spell",
+    img: normalizeText(entry.img) || "icons/svg/mystery-man.svg",
+    spCost: Math.max(0, Number(entry.spCost) || 0),
+    itemUuid: normalizeText(entry.itemUuid),
+    messageId: normalizeText(entry.messageId),
+    addedAt: Date.now(),
+  };
   const nextSpells = [
     ...spells,
-    {
-      id: foundry?.utils?.randomID ? foundry.utils.randomID(16) : Math.random().toString(36).slice(2),
-      name: normalizeText(entry.name) || "Concentration Spell",
-      img: normalizeText(entry.img) || "icons/svg/mystery-man.svg",
-      spCost: Math.max(0, Number(entry.spCost) || 0),
-      itemUuid: normalizeText(entry.itemUuid),
-      messageId: normalizeText(entry.messageId),
-      addedAt: Date.now(),
-    },
+    addedEntry,
   ];
   await actor.setFlag(MODULE_ID, CONCENTRATION_FLAG, { spells: nextSpells });
+  Hooks.callAll(`${MODULE_ID}.concentrationTrackerUpdated`, actor, nextSpells, addedEntry);
+  return addedEntry;
 }
 
 async function maybeTrackConcentrationMessage(message) {
@@ -205,12 +240,13 @@ async function maybeTrackConcentrationMessage(message) {
   const isConcentration = itemHasConcentrationDuration(item) || contentHasConcentrationDuration(content);
   if (!isConcentration) return;
 
-  const name = normalizeText(item?.name) || parseSpellNameFromContent(content);
+  const name = normalizeSpellName(item?.name) || parseSpellNameFromContent(content);
   const spCost = getSpellPointCost(item, content);
+  const img = parseSpellImageFromContent(content) || getItemImage(item);
   await addConcentrationEntry(actor, {
     name,
     spCost,
-    img: getItemImage(item),
+    img,
     itemUuid: item?.uuid || "",
     messageId: message.id || "",
   });

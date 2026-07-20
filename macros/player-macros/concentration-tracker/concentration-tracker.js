@@ -1,6 +1,7 @@
 (async () => {
   const MODULE_ID = "darkfinder";
   const FLAG_KEY = "concentrationTracker";
+  const UPDATE_HOOK = `${MODULE_ID}.concentrationTrackerUpdated`;
   const GREEN = "#43a047";
   const RED = "#ff4c4c";
 
@@ -33,6 +34,13 @@
 
   function normalizeText(value) {
     return String(value || "").trim();
+  }
+
+  function normalizeSpellName(value) {
+    return normalizeText(value)
+      .replace(/\s*\((?:use|core|augment)\)\s*$/i, "")
+      .replace(/\s{2,}/g, " ")
+      .trim();
   }
 
   function normalizeAbilityKey(value) {
@@ -215,13 +223,15 @@
         .df-concentration-cost { color:#6b4225; font-weight:900; white-space:nowrap; }
         .df-concentration-remove { width:1.85rem; min-width:1.85rem; height:1.85rem; padding:0; border:1px solid #9e916d; border-radius:4px; background:linear-gradient(to bottom, #ddd4b8, #c9bea0); color:#1c1914; font-size:1rem; font-weight:900; line-height:1; }
         .df-concentration-actions { display:flex; gap:0.75rem; justify-content:flex-end; flex:0 0 auto; }
-        .df-concentration-actions button { min-width:9rem; padding:0.55rem 0.8rem; font-weight:800; border:1px solid #9e916d; border-radius:4px; background:linear-gradient(to bottom, #ddd4b8, #c9bea0); color:#1c1914; }
+        .df-concentration-actions button { flex:1 1 0; min-width:0; padding:0.55rem 0.8rem; font-weight:800; border:1px solid #9e916d; border-radius:4px; background:linear-gradient(to bottom, #ddd4b8, #c9bea0); color:#1c1914; }
         .df-concentration-empty { color:#555; font-style:italic; font-size:0.92rem; }
         .df-concentration-audit-list { display:flex; flex-direction:column; gap:0.45rem; flex:1 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden; padding-right:0.2rem; }
-        .df-concentration-audit-row { display:grid; grid-template-columns:minmax(9rem, 1fr) auto auto minmax(16rem, 2fr); gap:0.75rem; align-items:start; background:rgba(236,233,225,0.82); border:1px solid #9f9787; border-radius:4px; padding:0.5rem 0.65rem; font-size:0.88rem; }
+        .df-concentration-audit-row { display:grid; grid-template-columns:minmax(0, 1fr); gap:0.3rem; align-items:start; background:rgba(236,233,225,0.82); border:1px solid #9f9787; border-radius:4px; padding:0.55rem 0.65rem; font-size:0.88rem; }
         .df-concentration-audit-name { font-weight:900; overflow-wrap:anywhere; }
+        .df-concentration-audit-metrics { display:flex; flex-wrap:wrap; gap:0.75rem; }
         .df-concentration-audit-metric { white-space:nowrap; font-weight:800; color:#3b3528; }
-        .df-concentration-audit-spells { min-width:0; overflow-wrap:anywhere; color:#2f2d28; }
+        .df-concentration-audit-spells { min-width:0; display:grid; gap:0.18rem; color:#2f2d28; }
+        .df-concentration-audit-spell { padding-left:1rem; overflow-wrap:anywhere; }
       </style>
     `;
   }
@@ -235,7 +245,7 @@
       ? spells.map((spell) => `
         <div class="df-concentration-row">
           <img class="df-concentration-icon" src="${escapeHtml(spell.img || "icons/svg/mystery-man.svg")}" alt="" />
-          <div class="df-concentration-name">${escapeHtml(spell.name || "Concentration Spell")}</div>
+          <div class="df-concentration-name">${escapeHtml(normalizeSpellName(spell.name) || "Concentration Spell")}</div>
           <div class="df-concentration-cost">${escapeHtml(String(Number(spell.spCost) || 0))} SP</div>
           <button type="button" class="df-concentration-remove" data-spell-id="${escapeHtml(spell.id || "")}" title="Stop concentrating">X</button>
         </div>
@@ -244,12 +254,12 @@
 
     return `
       ${buildStyles()}
-      <div class="df-concentration-root">
+      <div class="df-concentration-root" data-df-concentration-actor-id="${escapeHtml(targetActor.id || "")}">
         <div class="df-concentration-panel">
           <h3>Concentration Tracker</h3>
           <div class="df-concentration-summary">
             <div class="df-concentration-stat">
-              <span class="df-concentration-label">Total SP</span>
+              <span class="df-concentration-label">Total SP Being Concentrated On</span>
               <span class="df-concentration-value"${overClass}>${totalSP}</span>
             </div>
             <div class="df-concentration-stat">
@@ -277,15 +287,19 @@
         const spells = getStoredSpells(targetActor);
         const totalSP = calculateTotalSP(spells);
         const concentration = getBestConcentrationData(targetActor);
-        const spellText = spells.length
-          ? spells.map((spell) => `${spell.name || "Spell"} (${Number(spell.spCost) || 0} SP)`).join(", ")
-          : "None";
+        const spellHtml = spells.length
+          ? spells.map((spell) => (
+            `<div class="df-concentration-audit-spell">${escapeHtml(normalizeSpellName(spell.name) || "Spell")} (${escapeHtml(String(Number(spell.spCost) || 0))} SP)</div>`
+          )).join("")
+          : "<div class=\"df-concentration-audit-spell\">None</div>";
         return `
           <div class="df-concentration-audit-row">
             <div class="df-concentration-audit-name">${escapeHtml(targetActor.name || "Unknown")}</div>
-            <div class="df-concentration-audit-metric">Total: ${totalSP} SP</div>
-            <div class="df-concentration-audit-metric">Threshold: ${concentration.threshold}</div>
-            <div class="df-concentration-audit-spells">${escapeHtml(spellText)}</div>
+            <div class="df-concentration-audit-metrics">
+              <span class="df-concentration-audit-metric">Total: ${totalSP} SP</span>
+              <span class="df-concentration-audit-metric">Threshold: ${concentration.threshold}</span>
+            </div>
+            <div class="df-concentration-audit-spells">${spellHtml}</div>
           </div>
         `;
       }).join("")
@@ -422,9 +436,14 @@
       const removed = spells.find((spell) => String(spell.id || "") === spellId);
       await saveStoredSpells(targetActor, spells.filter((spell) => String(spell.id || "") !== spellId));
       if (removed) ui.notifications.info(`${targetActor.name} stopped concentrating on ${removed.name}.`);
-      root.find(".df-concentration-root").replaceWith($(buildActorContent(targetActor)).filter(".df-concentration-root"));
+      refreshActorDialog(root, targetActor);
       bindActorEvents(html, dialog, targetActor, token);
     });
+  }
+
+  function refreshActorDialog(root, targetActor) {
+    const nextRoot = $(buildActorContent(targetActor)).filter(".df-concentration-root");
+    root.find(`.df-concentration-root[data-df-concentration-actor-id="${targetActor.id}"]`).replaceWith(nextRoot);
   }
 
   function bindAuditEvents(html, dialog) {
@@ -436,16 +455,29 @@
   }
 
   function renderActorDialog(targetActor, token) {
+    let updateHandler = null;
     const dialog = new Dialog({
       title: "Concentration Tracker",
       content: buildActorContent(targetActor),
       buttons: {},
-      width: 760,
+      width: 505,
       height: 720,
       resizable: true,
+      close: () => {
+        if (updateHandler) Hooks.off(UPDATE_HOOK, updateHandler);
+      },
       render: function(html) {
-        applyDialogSizing(html, dialog, 760, 720);
+        applyDialogSizing(html, dialog, 505, 720);
         bindActorEvents(html, dialog, targetActor, token);
+        if (!updateHandler) {
+          const root = html.closest(".app.window-app, .dialog");
+          updateHandler = (updatedActor) => {
+            if (String(updatedActor?.id || "") !== String(targetActor.id || "")) return;
+            refreshActorDialog(root, targetActor);
+            bindActorEvents(html, dialog, targetActor, token);
+          };
+          Hooks.on(UPDATE_HOOK, updateHandler);
+        }
       },
     });
     dialog.render(true);
@@ -456,11 +488,11 @@
       title: "Concentration Audit",
       content: buildAuditContent(),
       buttons: {},
-      width: 980,
+      width: 600,
       height: 760,
       resizable: true,
       render: function(html) {
-        applyDialogSizing(html, dialog, 980, 760);
+        applyDialogSizing(html, dialog, 600, 760);
         bindAuditEvents(html, dialog);
       },
     });

@@ -32,7 +32,7 @@ const playerMacros = [
     id: "dfConcentr01",
     name: "Concentration Tracker",
     relativePath: "macros/player-macros/concentration-tracker/concentration-tracker.js",
-    img: "icons/svg/dice-target.svg",
+    img: "icons/magic/defensive/illusion-evasion-echo-purple.webp",
     ownershipDefault: 2,
   }),
   createEntry({
