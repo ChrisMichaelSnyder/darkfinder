@@ -1626,9 +1626,14 @@
     const rawDuration = normalizeDisplayedSpellText(String(durationText || "").trim());
     if (!rawDuration) return rawDuration;
 
-    if (/^(?:@cl|SP spent)\s+rounds?$/i.test(rawDuration)) {
-      return `${totalSP} rounds`;
-    }
+    const normalizedDuration = rawDuration.toLowerCase();
+    const hasVariableRounds = /\brounds?\b/.test(normalizedDuration)
+      && (
+        /@cl|sp spent|\/level\b|per level\b|\/cl\b|caster level\b|level-dependent\b/.test(normalizedDuration)
+        || /(?:^|[^\d])level(?:[^\w]|$)/.test(normalizedDuration)
+      );
+
+    if (hasVariableRounds) return "Combat";
     if (/^(?!1\b)(?:\d+|SP spent)\s+round$/i.test(rawDuration)) {
       return rawDuration.replace(/\bround$/i, "rounds");
     }
@@ -1636,7 +1641,7 @@
       return "Concentration";
     }
     if (/\bdays?\b/i.test(rawDuration)) {
-      return "24 hours";
+      return "All Day";
     }
     if (/^(?!1\b)(?:\d+|SP spent)\s+round$/i.test(rawDuration)) {
       return rawDuration.replace(/\bround$/i, "rounds");

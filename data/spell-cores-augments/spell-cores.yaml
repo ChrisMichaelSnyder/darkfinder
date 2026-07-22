@@ -544,6 +544,24 @@ entries:
       (+4 ): You do not need to have line of sight or effect to the target to place the sensor, but you must have a clear mental image of it.
       (+1 ): While sensing through the sensor, you may move it 30ft as a Move action in any direction as if it were a flying creature.
 
+  - icon: "icons/magic/control/silhouette-grow-shrink-tan.webp"
+    text: |
+      Size
+      Type: Core
+      SP Cost: 1
+      School: Transmutation
+      Casting Time: Standard
+      Range: Personal
+      Target: 1 creature
+      Duration: Concentration
+      Saving Throw: Fortitude (harmless)
+      Description:
+      You can increase the size of the target creature. The target's size category increases by one step. The target gains a +2 size bonus to Strength and a -2 penalty to Dexterity. The target's equipment is similarly affected.
+      Core Augments:
+      (+0 ): The target instead decreases in size by one step, and instead gains a +2 size bonus to Dexterity and a -2 penalty to Strength.
+      (+6*): The targets size category changes by one additional step and the cumulative bonuses and penalties are doubled.
+
+
   - icon: "icons/creatures/slimes/slime-bubble-green.webp"
     text: |
       Slick

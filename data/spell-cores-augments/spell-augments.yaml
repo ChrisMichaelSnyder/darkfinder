@@ -40,18 +40,19 @@ entries:
     text: |
       Duration
       Type: Augment
-      Limitation: Any spell core with a non-instantaneous duration measured in a finite number.
       Description:
       Increase the duration of a spell effect.
-      (+1*): Increase the spell's duration by 1 Round.
-      (+4 ): Change the spell's duration to "Concentration"
-      (+6 ): Change the spell's duration from "Concentration" to "24 hours"
+      (+0 ): Change the spell's duration from "Concentration" to "Combat".
+      (+2 ): Change the spell's duration from non-"Concentration" to "Combat".
+      (+2 ): Change the spell's duration from "Combat" to "Concentration".
+      (+4 ): Change the spell's duration from non-"Instantaneous" to "Concentration".
+      (+6 ): Change the spell's duration from "Concentration" to "All Day".
  
   - icon: "icons/svg/daze.svg"
     text: |
       Effort
       Type: Augment
-      Limitation: The resulting spell effect takes an additional move action to cast and cannot last longer than 5 minutes no matter its listed duration.
+      Limitation: The resulting spell effect takes an additional move action to cast and if its duration was "Concentration" or "All Day" then it instead becomes "Combat".
       Description:
       Make the spell cheaper to cast by making it more physically demanding to cast.
       (-1 ): You must succeed a DC 20 skill check in a thematically relevant skill check when completing this spell, or the spell fails. A Natural 1 is an automatic failure and a Natural 20 is not an automatic success. The GM must approve your skill choice to be sure it is the most relevant to the spells' thematics, and it should generally be a physical skill or at least a skill that might use actual effort (like a Heal or Perform check).
@@ -64,7 +65,7 @@ entries:
       Type: Augment
       Limitation: The Glyph must be inscribed onto an immobile surface, such as a floor or wall. It is visible, but may be cleverly hidden.
       Description:
-      (+2 ): When a creature comes within 5 feet of the Glyph, it triggers the spell as if it were cast at that moment from the same square the glyph is in, and you immediately become aware that it has been triggered regardless of how far away it is. The Glyph lasts 24 hours, and you may renew the duration of an untriggered Glyph by casting the spell again the next day without needing to have line of sight or effect to it. A Glyph spell has its Target changed to "30 ft burst".
+      (+2 ): When a creature comes within 5 feet of the Glyph, it triggers the spell as if it were cast at that moment from the same square the glyph is in, and you immediately become aware that it has been triggered regardless of how far away it is. A Glyph spell has a duration of "All Day", and you may renew the duration of an untriggered Glyph by casting the spell again the next day without needing to have line of sight or effect to it. A Glyph spell has its Target changed to "30 ft burst".
       (+1 ): The Glyph can be manually triggered remotely.
       (+1 ): The Glyph is invisible, requiring a Perception check equal to 10+(2x the total SP of this spell) to spot.
  
