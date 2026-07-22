@@ -1933,17 +1933,23 @@
   }
 
   function buildCoreHoverDescription(core) {
+    const hoverSpellPointCost = getCoreHoverSpellPointCost(core);
     const rawDescription = normalizeDisplayedSpellText(stripHtmlTags(getSpellDescription(core)));
-    if (descriptionHasStructuredSpellAttributes(rawDescription)) return rawDescription;
+    if (descriptionHasStructuredSpellAttributes(rawDescription)) {
+      return rawDescription.replace(
+        /((?:^|\n)\s*Duration:\s*)([^\n\r]+)/i,
+        (_, prefix, durationValue) => `${prefix}${normalizeSpellAttributeDuration(durationValue, hoverSpellPointCost) || durationValue}`,
+      );
+    }
     return normalizeDisplayedSpellText([
       getDisplaySpellName(core?.name || "") || "Unnamed Core",
       "Type: Core",
-      `SP Cost: ${getCoreHoverSpellPointCost(core)}`,
+      `SP Cost: ${hoverSpellPointCost}`,
       `School: ${getSpellSchool(core) || "None"}`,
       `Casting Time: ${getSpellCastingTime(core) || "None"}`,
       `Range: ${getSpellRange(core) || "None"}`,
       `Target: ${getSpellTarget(core) || "None"}`,
-      `Duration: ${getSpellDuration(core) || "None"}`,
+      `Duration: ${normalizeSpellAttributeDuration(getSpellDuration(core) || "None", hoverSpellPointCost) || "None"}`,
       `Saving Throw: ${getSpellSavingThrow(core) || "None"}`,
       "Description:",
       rawDescription || "None",
