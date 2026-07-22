@@ -2792,6 +2792,76 @@
     return updates.length;
   }
 
+  function replaceStructuredDurationLine(description, durationText) {
+    const source = String(description || "");
+    if (!source) return source;
+    return source.replace(
+      /(Duration:\s*)([^<\n\r]+)(?=(?:<br\s*\/?>|\n|\r|$))/i,
+      (_match, prefix) => `${prefix}${durationText}`,
+    );
+  }
+
+  function getStructuredDurationLine(description) {
+    const source = stripHtmlTags(String(description || ""));
+    const match = source.match(/(?:^|\n)\s*Duration:\s*([^\n\r]+)/i);
+    return match?.[1]?.trim() || "";
+  }
+
+  async function normalizeSpontaneousActorCoreDurations(actor) {
+    const spellItems = Array.from(actor?.items?.contents ?? actor?.items ?? [])
+      .filter((item) => item?.type === "spell" && !isAugmentSpell(item));
+    if (!spellItems.length) return 0;
+
+    const updates = [];
+    for (const item of spellItems) {
+      const description = getSpellDescription(item);
+      const spellPointCost = getSpellPointCost(item);
+      const sourceDuration = getStructuredDurationLine(description) || getSpellDuration(item) || "None";
+      const normalizedDuration = normalizeSpellAttributeDuration(sourceDuration, spellPointCost) || sourceDuration;
+      const durationData = getDurationDataFromDisplay(normalizedDuration);
+      const update = { _id: item.id };
+
+      if (item.system?.duration && typeof item.system.duration === "object") {
+        update["system.duration"] = {
+          value: durationData.value,
+          units: durationData.units,
+          concentration: durationData.concentration,
+          dismiss: durationData.dismiss,
+        };
+      } else {
+        update["system.duration"] = normalizedDuration;
+      }
+
+      if (description) {
+        update["system.description.value"] = replaceStructuredDurationLine(description, normalizedDuration);
+      }
+
+      const normalizedActions = getNormalizedActionArrayForUpdate(item);
+      if (Array.isArray(normalizedActions)) {
+        for (const action of normalizedActions) {
+          if (!action || typeof action !== "object") continue;
+          if (typeof action.duration === "object" && action.duration !== null) {
+            setObjectPathValue(action, ["duration"], {
+              value: durationData.value,
+              units: durationData.units,
+              concentration: durationData.concentration,
+              dismiss: durationData.dismiss,
+            });
+          } else {
+            setObjectPathValue(action, ["duration"], normalizedDuration);
+          }
+        }
+        update["system.actions"] = normalizedActions;
+      }
+
+      updates.push(update);
+    }
+
+    await actor.updateEmbeddedDocuments("Item", updates);
+    actor.sheet?.render?.(true);
+    return updates.length;
+  }
+
   function buildGeneratedUseAction(actionId) {
     return {
       _id: actionId,
@@ -3437,8 +3507,19 @@
     const { itemData } = buildSpellItemData(actor, state, {
       preferTemplateSource: state.preparationMode === "spontaneous",
     });
-  
-    return createSpellChatFromTemporaryItem(actor, itemData);
+
+    const castSucceeded = await createSpellChatFromTemporaryItem(actor, itemData);
+    if (castSucceeded && state.preparationMode === "spontaneous") {
+      try {
+        const normalizedCount = await normalizeSpontaneousActorCoreDurations(actor);
+        ui.notifications.info(`Normalized spell durations on ${normalizedCount} non-augment spell${normalizedCount === 1 ? "" : "s"}.`);
+      } catch (err) {
+        console.warn("Spellcrafting macro could not retroactively normalize spontaneous core durations.", err);
+        ui.notifications.warn("Retroactive duration normalization failed. Check the console for details.");
+      }
+    }
+
+    return castSucceeded;
   }
 
   function buildDialogContent(spellbooks, state, actor) {
