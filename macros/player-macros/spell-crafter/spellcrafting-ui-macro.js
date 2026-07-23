@@ -1667,7 +1667,7 @@
       return { value: "", units: "perm", concentration: false, dismiss: false };
     }
     if (/^concentration$/i.test(normalized)) {
-      return { value: "", units: "spec", concentration: true, dismiss: false };
+      return { value: "Concentration", units: "spec", concentration: true, dismiss: false };
     }
 
     const dismiss = /\(d\)\s*$/i.test(normalized);
@@ -2325,19 +2325,47 @@
     };
   }
 
-  function doesAugmentChangeDurationToConcentration(detail) {
-    const title = String(detail?.augment?.title || "").trim().replace(/\s*\([^)]+\)\s*$/, "").trim();
-    const text = normalizeDisplayedSpellText(`${detail?.augment?.title || ""} ${detail?.augment?.description || ""}`).toLowerCase();
-    return (/^duration$/i.test(title) || text.includes("duration"))
-      && text.includes("concentration")
-      && !/\bfrom\s+["']?concentration["']?\b/i.test(text);
-  }
-
   function applyMechanicalAugmentOverrides(resolvedAttributes, augmentDetails) {
     if (!resolvedAttributes || !Array.isArray(augmentDetails)) return resolvedAttributes;
-    if (augmentDetails.some((detail) => doesAugmentChangeDurationToConcentration(detail))) {
-      resolvedAttributes.duration = "Concentration";
+
+    const isDurationAugment = (detail) => {
+      const title = String(detail?.augment?.title || "").trim().replace(/\s*\([^)]+\)\s*$/, "").trim();
+      const itemName = getDisplaySpellName(detail?.item?.name || "");
+      return /^duration$/i.test(title) || /^duration$/i.test(itemName);
+    };
+
+    const applyDurationAugmentOverride = (currentDuration, detail) => {
+      if (!isDurationAugment(detail)) return currentDuration;
+
+      const durationText = String(currentDuration || "").trim() || "None";
+      const text = normalizeDisplayedSpellText(`${detail?.augment?.title || ""} ${detail?.augment?.description || ""}`).toLowerCase();
+      const hasPhrase = (pattern) => pattern.test(text);
+
+      if (hasPhrase(/\bfrom\s+["']?concentration["']?\s+to\s+["']?combat["']?(?=$|[\s.,;:!?])/i)) {
+        return /^concentration$/i.test(durationText) ? "Combat" : durationText;
+      }
+      if (hasPhrase(/\bfrom\s+non-["']?concentration["']?\s+to\s+["']?combat["']?(?=$|[\s.,;:!?])/i)) {
+        return /^concentration$/i.test(durationText) ? durationText : "Combat";
+      }
+      if (hasPhrase(/\bfrom\s+["']?combat["']?\s+to\s+["']?concentration["']?(?=$|[\s.,;:!?])/i)) {
+        return /^combat$/i.test(durationText) ? "Concentration" : durationText;
+      }
+      if (hasPhrase(/\bfrom\s+non-["']?instantaneous["']?\s+to\s+["']?concentration["']?(?=$|[\s.,;:!?])/i)) {
+        return /^instantaneous$/i.test(durationText) ? durationText : "Concentration";
+      }
+      if (hasPhrase(/\bfrom\s+["']?concentration["']?\s+to\s+["']?all day["']?(?=$|[\s.,;:!?])/i)) {
+        return /^concentration$/i.test(durationText) ? "All Day" : durationText;
+      }
+
+      return durationText;
+    };
+
+    let nextDuration = resolvedAttributes.duration;
+    for (const detail of augmentDetails) {
+      nextDuration = applyDurationAugmentOverride(nextDuration, detail);
     }
+
+    resolvedAttributes.duration = nextDuration;
     return resolvedAttributes;
   }
 
@@ -2807,6 +2835,18 @@
     return match?.[1]?.trim() || "";
   }
 
+  function durationObjectNeedsConcentrationRepair(durationData) {
+    if (!durationData || typeof durationData !== "object") return false;
+    if (durationData.concentration !== true) return false;
+    const currentValue = normalizeAttributeValue(
+      durationData.value
+      ?? durationData.amount
+      ?? durationData.current
+      ?? durationData.text,
+    );
+    return !/^concentration$/i.test(String(currentValue || "").trim());
+  }
+
   async function normalizeSpontaneousActorCoreDurations(actor) {
     const spellItems = Array.from(actor?.items?.contents ?? actor?.items ?? [])
       .filter((item) => item?.type === "spell" && !isAugmentSpell(item));
@@ -2819,6 +2859,28 @@
       const sourceDuration = getStructuredDurationLine(description) || getSpellDuration(item) || "None";
       const normalizedDuration = normalizeSpellAttributeDuration(sourceDuration, spellPointCost) || sourceDuration;
       const durationData = getDurationDataFromDisplay(normalizedDuration);
+      const currentStructuredDuration = getStructuredDurationLine(description);
+      const currentSystemDuration = formatDurationDisplay(getObjectPath(item, ["system", "duration"])) || "";
+      const nextDescription = description ? replaceStructuredDurationLine(description, normalizedDuration) : "";
+      const descriptionNeedsUpdate = !!description && nextDescription !== description;
+      const systemDurationNeedsUpdate = currentSystemDuration !== normalizedDuration
+        || (normalizedDuration === "Concentration" && durationObjectNeedsConcentrationRepair(getObjectPath(item, ["system", "duration"])));
+      const normalizedActions = getNormalizedActionArrayForUpdate(item);
+      let actionsNeedUpdate = false;
+
+      if (Array.isArray(normalizedActions)) {
+        actionsNeedUpdate = normalizedActions.some((action) => {
+          if (!action || typeof action !== "object") return false;
+          const currentActionDuration = formatDurationDisplay(getObjectPath(action, ["duration"])) || "";
+          return currentActionDuration !== normalizedDuration
+            || (normalizedDuration === "Concentration" && durationObjectNeedsConcentrationRepair(getObjectPath(action, ["duration"])));
+        });
+      }
+
+      if (!descriptionNeedsUpdate && !systemDurationNeedsUpdate && !actionsNeedUpdate && currentStructuredDuration === normalizedDuration) {
+        continue;
+      }
+
       const update = { _id: item.id };
 
       if (item.system?.duration && typeof item.system.duration === "object") {
@@ -2832,12 +2894,11 @@
         update["system.duration"] = normalizedDuration;
       }
 
-      if (description) {
-        update["system.description.value"] = replaceStructuredDurationLine(description, normalizedDuration);
+      if (descriptionNeedsUpdate) {
+        update["system.description.value"] = nextDescription;
       }
 
-      const normalizedActions = getNormalizedActionArrayForUpdate(item);
-      if (Array.isArray(normalizedActions)) {
+      if (actionsNeedUpdate && Array.isArray(normalizedActions)) {
         for (const action of normalizedActions) {
           if (!action || typeof action !== "object") continue;
           if (typeof action.duration === "object" && action.duration !== null) {
@@ -3511,11 +3572,9 @@
     const castSucceeded = await createSpellChatFromTemporaryItem(actor, itemData);
     if (castSucceeded && state.preparationMode === "spontaneous") {
       try {
-        const normalizedCount = await normalizeSpontaneousActorCoreDurations(actor);
-        ui.notifications.info(`Normalized spell durations on ${normalizedCount} non-augment spell${normalizedCount === 1 ? "" : "s"}.`);
+        await normalizeSpontaneousActorCoreDurations(actor);
       } catch (err) {
         console.warn("Spellcrafting macro could not retroactively normalize spontaneous core durations.", err);
-        ui.notifications.warn("Retroactive duration normalization failed. Check the console for details.");
       }
     }
 
