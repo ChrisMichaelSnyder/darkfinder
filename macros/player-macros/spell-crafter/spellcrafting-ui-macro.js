@@ -2847,7 +2847,7 @@
     return !/^concentration$/i.test(String(currentValue || "").trim());
   }
 
-  async function normalizeSpontaneousActorCoreDurations(actor) {
+  async function normalizeActorNonAugmentSpellDurations(actor) {
     const spellItems = Array.from(actor?.items?.contents ?? actor?.items ?? [])
       .filter((item) => item?.type === "spell" && !isAugmentSpell(item));
     if (!spellItems.length) return 0;
@@ -3464,6 +3464,7 @@
   async function addBuiltSpellToSpellbook(actor, state, customName) {
     const { itemData, resolvedAttributes } = buildSpellItemData(actor, state, { customName });
     const [createdSpell] = await actor.createEmbeddedDocuments("Item", [itemData]);
+    await normalizeActorNonAugmentSpellDurations(actor);
     if (createdSpell) {
       createdSpell.sheet?.render?.(true);
     }
@@ -3572,7 +3573,7 @@
     const castSucceeded = await createSpellChatFromTemporaryItem(actor, itemData);
     if (castSucceeded && state.preparationMode === "spontaneous") {
       try {
-        await normalizeSpontaneousActorCoreDurations(actor);
+        await normalizeActorNonAugmentSpellDurations(actor);
       } catch (err) {
         console.warn("Spellcrafting macro could not retroactively normalize spontaneous core durations.", err);
       }
