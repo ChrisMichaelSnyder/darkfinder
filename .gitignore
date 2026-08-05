@@ -6,3 +6,6 @@ test-results/
 *.jpeg
 *.zip
 generated/
+!assets/
+!assets/harrow-cards/
+!assets/harrow-cards/*.jpg

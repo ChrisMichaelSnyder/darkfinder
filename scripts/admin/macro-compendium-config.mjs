@@ -43,6 +43,13 @@ const playerMacros = [
     ownershipDefault: 2,
   }),
   createEntry({
+    id: "dfFateCards01",
+    name: "Fate Cards",
+    relativePath: "macros/player-macros/fate-cards/fate-cards.js",
+    img: "modules/darkfinder/assets/harrow-cards/Card_Back.jpg",
+    ownershipDefault: 2,
+  }),
+  createEntry({
     id: "dfResolve001",
     name: "Resolve Check",
     relativePath: "macros/player-macros/check-resolve/check-resolve.js",
