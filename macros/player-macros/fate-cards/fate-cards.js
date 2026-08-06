@@ -10,6 +10,7 @@
   const shouldSuppressChatMessage = executionScope.suppressChatMessage === true;
   const shouldSuppressBroadcast = executionScope.suppressBroadcast === true;
   const actor = broadcastPayload ? null : game.user.character || canvas.tokens.controlled[0]?.actor || null;
+  const moduleApi = game.modules.get(MODULE_ID)?.api || null;
 
   if (!broadcastPayload && !actor) {
     return ui.notifications.warn("Since you have no default character sheet, please select a token to use.");
@@ -155,7 +156,16 @@
     await createPublicRevealMessage(actorContext, drawnCard);
   }
   if (!shouldSuppressBroadcast) {
-    broadcastRevealToOtherClients(drawnCard, actorContext);
+    if (moduleApi?.broadcastFateCardsDialog) {
+      moduleApi.broadcastFateCardsDialog({ card: drawnCard, actorContext });
+    } else {
+      broadcastRevealToOtherClients(drawnCard, actorContext);
+    }
+  }
+
+  if (moduleApi?.openFateCardsDialog) {
+    await moduleApi.openFateCardsDialog({ card: drawnCard, actorContext });
+    return;
   }
 
   const dialog = new Dialog({
