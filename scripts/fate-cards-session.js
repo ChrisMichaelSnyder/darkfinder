@@ -1,34 +1,19 @@
 import { MODULE_ID } from "./api.js";
 
-const SESSION_SETTING_KEY = "fateCardSession";
-const SOCKET_NAME = `module.${MODULE_ID}`;
+const CHAT_FLAG_KEY = "fateCardPopup";
 const DIALOG_REGISTRY_KEY = "darkfinderFateCardsDialog";
 const DIALOG_WIDTH = 560;
 const DIALOG_HEIGHT = 930;
 
 const state = {
   hooksRegistered: false,
-  settingWatcherIntervalId: null,
-  lastObservedSessionSignature: "",
   lastOpenedSessionId: "",
 };
 
 function registerFateCardsSessionFeature(api) {
   if (!state.hooksRegistered) {
-    Hooks.once("init", () => {
-      game.settings.register(MODULE_ID, SESSION_SETTING_KEY, {
-        name: "Fate Card Session",
-        scope: "world",
-        config: false,
-        type: Object,
-        default: {},
-      });
-    });
-
     Hooks.once("ready", () => {
-      game.socket.on(SOCKET_NAME, handleSocketMessage);
-      Hooks.on("updateSetting", handleFateCardSettingUpdate);
-      startFateCardSettingWatcher();
+      Hooks.on("createChatMessage", handleFateCardChatMessage);
     });
 
     state.hooksRegistered = true;
@@ -39,110 +24,19 @@ function registerFateCardsSessionFeature(api) {
   api.broadcastFateCardsDialog = broadcastFateCardsDialog;
 }
 
-async function broadcastFateCardsDialog(payload) {
-  const session = buildSessionPayload(payload);
-  if (!session) return null;
+function handleFateCardChatMessage(message) {
+  const session = getChatMessageSession(message);
+  if (!session?.id) return;
+  if (state.lastOpenedSessionId === session.id) return;
 
-  if (game.user?.isGM) {
-    await setStoredFateCardSession(session);
-    broadcastSessionToClients(session);
-    return session;
-  }
-
-  broadcastSessionToClients(session);
-  game.socket.emit(SOCKET_NAME, {
-    moduleId: MODULE_ID,
-    type: "request-show-dialog",
+  void openFateCardsDialog({
+    ...(session.payload || {}),
     sessionId: session.id,
-    senderUserId: game.user.id,
-    session,
   });
-
-  return session;
 }
 
-async function handleSocketMessage(message) {
-  const type = String(message?.type || "").trim();
-  if (!message || typeof message !== "object") return;
-  if (String(message.moduleId || "") !== MODULE_ID) return;
-
-  if (type === "request-show-dialog") {
-    if (!game.user?.isGM) return;
-    const session = normalizeSession(message?.session)
-      || buildSessionPayload(message?.payload || message?.session?.payload || message?.session);
-    if (!session) return;
-    await setStoredFateCardSession(session);
-    broadcastSessionToClients(session);
-    return;
-  }
-
-  if (type === "show-dialog") {
-    const session = normalizeSession(message?.session);
-    if (!session) return;
-    if (state.lastOpenedSessionId === session.id) return;
-    await openFateCardsDialog({
-      ...(session.payload || {}),
-      sessionId: session.id,
-    });
-  }
-}
-
-function handleFateCardSettingUpdate(setting) {
-  if (!isFateCardSettingDocument(setting)) return;
-
-  setTimeout(() => {
-    void syncFateCardUiFromSetting(getStoredFateCardSession());
-  }, 0);
-}
-
-function startFateCardSettingWatcher() {
-  if (state.settingWatcherIntervalId) return;
-
-  state.lastObservedSessionSignature = buildSessionSignature(getStoredFateCardSession());
-  state.settingWatcherIntervalId = window.setInterval(() => {
-    const storedSession = getStoredFateCardSession();
-    const nextSignature = buildSessionSignature(storedSession);
-    if (nextSignature === state.lastObservedSessionSignature) return;
-
-    state.lastObservedSessionSignature = nextSignature;
-    void syncFateCardUiFromSetting(storedSession);
-  }, 350);
-}
-
-async function syncFateCardUiFromSetting(session) {
-  const normalizedSession = normalizeSession(session);
-  const sessionId = String(normalizedSession?.id || "").trim();
-  if (!sessionId) return;
-  if (state.lastOpenedSessionId === sessionId) return;
-
-  await openFateCardsDialog(normalizedSession.payload || {});
-  state.lastOpenedSessionId = sessionId;
-}
-
-function getStoredFateCardSession() {
-  return game.settings.get(MODULE_ID, SESSION_SETTING_KEY) || {};
-}
-
-async function setStoredFateCardSession(session) {
-  await game.settings.set(MODULE_ID, SESSION_SETTING_KEY, session || {});
-}
-
-function isFateCardSettingDocument(setting) {
-  const namespace = String(setting?.namespace || "").trim();
-  const key = String(setting?.key || "").trim();
-  const compositeKey = String(setting?.id || "").trim();
-
-  if (namespace === MODULE_ID && key === SESSION_SETTING_KEY) return true;
-  return compositeKey === `${MODULE_ID}.${SESSION_SETTING_KEY}`;
-}
-
-function buildSessionSignature(session) {
-  const normalized = normalizeSession(session);
-  if (!normalized?.id) return "";
-  return JSON.stringify({
-    id: normalized.id,
-    createdAt: Number(normalized.createdAt || 0),
-  });
+function broadcastFateCardsDialog(payload) {
+  return buildSessionPayload(payload);
 }
 
 function buildSessionPayload(payload) {
@@ -157,19 +51,6 @@ function buildSessionPayload(payload) {
   };
 }
 
-function broadcastSessionToClients(session) {
-  const normalizedSession = normalizeSession(session);
-  if (!normalizedSession?.id) return;
-
-  game.socket.emit(SOCKET_NAME, {
-    moduleId: MODULE_ID,
-    type: "show-dialog",
-    sessionId: normalizedSession.id,
-    senderUserId: String(game.user?.id || normalizedSession.senderUserId || ""),
-    session: normalizedSession,
-  });
-}
-
 function normalizeSession(session) {
   if (!session || typeof session !== "object") return null;
   const payload = normalizePayload(session.payload);
@@ -181,6 +62,13 @@ function normalizeSession(session) {
     senderUserId: String(session.senderUserId || ""),
     payload,
   };
+}
+
+function getChatMessageSession(message) {
+  const flaggedSession = message?.getFlag?.(MODULE_ID, CHAT_FLAG_KEY)
+    || foundry?.utils?.getProperty?.(message, `flags.${MODULE_ID}.${CHAT_FLAG_KEY}`)
+    || null;
+  return normalizeSession(flaggedSession);
 }
 
 async function openFateCardsDialog(payload) {
