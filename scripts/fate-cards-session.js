@@ -49,6 +49,7 @@ async function broadcastFateCardsDialog(payload) {
     return session;
   }
 
+  broadcastSessionToClients(session);
   game.socket.emit(SOCKET_NAME, {
     moduleId: MODULE_ID,
     type: "request-show-dialog",
