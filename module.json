@@ -2,10 +2,10 @@
   "id": "darkfinder",
   "title": "Darkfinder",
   "description": "Darkfinder tools, macros, and compendium-backed utilities for Pathfinder 1e.",
-  "version": "0.1.68",
+  "version": "0.1.69",
   "url": "https://github.com/ChrisMichaelSnyder/darkfinder",
   "manifest": "https://raw.githubusercontent.com/ChrisMichaelSnyder/darkfinder/main/module.json",
-  "download": "https://github.com/ChrisMichaelSnyder/darkfinder/releases/download/v0.1.68/darkfinder-v0.1.68.zip",
+  "download": "https://github.com/ChrisMichaelSnyder/darkfinder/releases/download/v0.1.69/darkfinder-v0.1.69.zip",
   "authors": [
     {
       "name": "csnyd"

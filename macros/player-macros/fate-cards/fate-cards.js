@@ -2,7 +2,6 @@
   const executionScope = typeof scope !== "undefined" && scope && typeof scope === "object" ? scope : {};
   const MODULE_ID = "darkfinder";
   const DIALOG_REGISTRY_KEY = "darkfinderFateCardsDialog";
-  const SOCKET_NAME = `module.${MODULE_ID}`;
   const IMAGE_ROOT = `modules/${MODULE_ID}/assets/harrow-cards`;
   const DIALOG_WIDTH = 560;
   const DIALOG_HEIGHT = 930;
@@ -157,9 +156,14 @@
   }
   if (!shouldSuppressBroadcast) {
     if (moduleApi?.broadcastFateCardsDialog) {
-      moduleApi.broadcastFateCardsDialog({ card: drawnCard, actorContext });
-    } else {
-      broadcastRevealToOtherClients(drawnCard, actorContext);
+      const session = await moduleApi.broadcastFateCardsDialog({ card: drawnCard, actorContext });
+      if (moduleApi?.openFateCardsDialog) {
+        await moduleApi.openFateCardsDialog({
+          ...(session?.payload || { card: drawnCard, actorContext }),
+          sessionId: session?.id || "",
+        });
+        return;
+      }
     }
   }
 
@@ -389,36 +393,6 @@
       rollMode: CONST.DICE_ROLL_MODES.PUBLIC,
       whisper: [],
       blind: false,
-    });
-  }
-
-  function broadcastRevealToOtherClients(card, targetActorContext) {
-    game.socket.emit(SOCKET_NAME, {
-      moduleId: MODULE_ID,
-      type: "fate-cards:show-dialog",
-      senderUserId: game.user.id,
-      payload: {
-        card: {
-          name: String(card?.name || ""),
-          ability: String(card?.ability || ""),
-          abilityLabel: String(card?.abilityLabel || ""),
-          alignment: String(card?.alignment || ""),
-          alignmentLabel: String(card?.alignmentLabel || ""),
-          image: String(card?.image || ""),
-        },
-        actorContext: {
-          name: String(targetActorContext?.name || ""),
-          alignment: String(targetActorContext?.alignment || ""),
-          abilities: {
-            str: Number(targetActorContext?.abilities?.str || 0),
-            dex: Number(targetActorContext?.abilities?.dex || 0),
-            con: Number(targetActorContext?.abilities?.con || 0),
-            int: Number(targetActorContext?.abilities?.int || 0),
-            wis: Number(targetActorContext?.abilities?.wis || 0),
-            cha: Number(targetActorContext?.abilities?.cha || 0),
-          },
-        },
-      },
     });
   }
 
