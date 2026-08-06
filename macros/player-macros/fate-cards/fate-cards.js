@@ -1,12 +1,23 @@
 (async () => {
+  const executionScope = scope && typeof scope === "object" ? scope : {};
   const MODULE_ID = "darkfinder";
+  const DIALOG_REGISTRY_KEY = "darkfinderFateCardsDialog";
+  const SOCKET_NAME = `module.${MODULE_ID}`;
   const IMAGE_ROOT = `modules/${MODULE_ID}/assets/harrow-cards`;
   const DIALOG_WIDTH = 560;
   const DIALOG_HEIGHT = 930;
-  const actor = game.user.character || null;
+  const broadcastPayload = normalizeBroadcastPayload(executionScope.fateCardBroadcast);
+  const shouldSuppressChatMessage = executionScope.suppressChatMessage === true;
+  const shouldSuppressBroadcast = executionScope.suppressBroadcast === true;
+  const actor = broadcastPayload ? null : game.user.character || canvas.tokens.controlled[0]?.actor || null;
 
-  if (!actor) {
-    return ui.notifications.warn("Assign a default character before using Fate Cards.");
+  if (!broadcastPayload && !actor) {
+    return ui.notifications.warn("Since you have no default character sheet, please select a token to use.");
+  }
+
+  const existingDialog = globalThis[DIALOG_REGISTRY_KEY];
+  if (existingDialog?.rendered) {
+    await existingDialog.close();
   }
 
   const ALIGNMENT_ROWS = [
@@ -95,7 +106,7 @@
         ["con", "The Sickness", "The_Sickness.jpg"],
         ["int", "The Idiot", "The_Idiot.jpg"],
         ["wis", "The Mute Hag", "The_Mute_Hag.jpg"],
-        ["cha", "The Betrayal", "The_Bretrayal.jpg"],
+        ["cha", "The Betrayal", "The_Betrayal.jpg"],
       ],
     },
     {
@@ -133,10 +144,18 @@
     return ui.notifications.error(`Fate Cards expected 54 mapped cards but found ${HARROW_CARDS.length}.`);
   }
 
-  const drawnCard = HARROW_CARDS[Math.floor(Math.random() * HARROW_CARDS.length)];
-  const actorAlignment = parseAlignment(getActorAlignmentValue(actor));
+  const drawnCard = broadcastPayload?.card || HARROW_CARDS[Math.floor(Math.random() * HARROW_CARDS.length)];
+  const actorContext = broadcastPayload?.actorContext || buildActorContext(actor);
+  const actorAlignment = parseAlignment(actorContext?.alignment);
   if (!actorAlignment) {
     return ui.notifications.warn("Could not read your character's alignment for Fate Cards.");
+  }
+
+  if (!shouldSuppressChatMessage) {
+    await createPublicRevealMessage(actorContext, drawnCard);
+  }
+  if (!shouldSuppressBroadcast) {
+    broadcastRevealToOtherClients(drawnCard, actorContext);
   }
 
   const dialog = new Dialog({
@@ -152,6 +171,7 @@
     },
   });
 
+  globalThis[DIALOG_REGISTRY_KEY] = dialog;
   dialog.render(true);
 
   function buildDialogContent(card) {
@@ -213,7 +233,8 @@
 
         .fate-cards-chip {
           position: absolute;
-          left: 14px;
+          left: 50%;
+          transform: translateX(-50%);
           z-index: 2;
           padding: 0.35rem 0.6rem;
           border-radius: 999px;
@@ -222,13 +243,6 @@
           border: 1px solid rgba(201, 172, 117, 0.45);
           box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
           backdrop-filter: blur(3px);
-        }
-
-        .fate-cards-chip--name {
-          top: 14px;
-          font-size: 1.05rem;
-          font-weight: 700;
-          letter-spacing: 0.02em;
         }
 
         .fate-cards-chip--meta {
@@ -285,6 +299,7 @@
           border: 1px solid rgba(230, 211, 160, 0.28);
           color: #eadfc2;
           text-align: center;
+          white-space: pre-line;
           font-size: 1rem;
           font-weight: 600;
           box-shadow: 0 10px 24px rgba(0, 0, 0, 0.34);
@@ -293,11 +308,12 @@
         .fate-cards-footer {
           display: flex;
           flex: 0 0 auto;
-          gap: 0.65rem;
+          justify-content: center;
         }
 
         .fate-cards-button {
-          flex: 1 1 0;
+          flex: 0 0 auto;
+          width: min(100%, 250px);
           min-height: 2.6rem;
           border-radius: 8px;
           border: 1px solid #8a7651;
@@ -327,7 +343,6 @@
         <div class="fate-cards-panel">
           <div class="fate-cards-frame">
             <img class="fate-cards-image" src="${escapeHtml(card.image)}" alt="${escapeHtml(card.name)}">
-            <div class="fate-cards-chip fate-cards-chip--name">${escapeHtml(card.name)}</div>
             <div class="fate-cards-chip fate-cards-chip--meta">${escapeHtml(card.abilityLabel)} • ${escapeHtml(card.alignmentLabel)}</div>
             <div class="fate-cards-overlay" data-role="overlay">
               <div class="fate-cards-total" data-role="total-bonus"></div>
@@ -336,11 +351,65 @@
           </div>
         </div>
         <div class="fate-cards-footer">
-          <button type="button" class="fate-cards-button" data-action="close">Close</button>
           <button type="button" class="fate-cards-button fate-cards-button--primary" data-action="calculate">Thinking is Hard</button>
         </div>
       </div>
     `;
+  }
+
+  async function createPublicRevealMessage(targetActor, card) {
+    const content = `
+      <div class="darkfinder-fate-card-chat" style="display:flex; flex-direction:column; gap:0.65rem; width:100%;">
+        <div style="font-size:1rem; line-height:1.4;">
+          <strong>${escapeHtml(targetActor?.name || game.user.name || "A character")}</strong> draws <strong>${escapeHtml(card.name)}</strong>.
+        </div>
+        <div style="width:100%; display:flex; justify-content:center;">
+          <img
+            src="${escapeHtml(card.image)}"
+            alt="${escapeHtml(card.name)}"
+            style="display:block; width:70%; max-width:70%; height:auto; border-radius:8px; border:3px solid rgba(24,18,14,0.92); box-shadow:0 8px 20px rgba(0,0,0,0.35);"
+          />
+        </div>
+      </div>
+    `;
+
+    await ChatMessage.create({
+      speaker: ChatMessage.getSpeaker({ alias: String(targetActor?.name || game.user.name || "A character") }),
+      content,
+      rollMode: CONST.DICE_ROLL_MODES.PUBLIC,
+      whisper: [],
+      blind: false,
+    });
+  }
+
+  function broadcastRevealToOtherClients(card, targetActorContext) {
+    game.socket.emit(SOCKET_NAME, {
+      moduleId: MODULE_ID,
+      type: "fate-cards:show-dialog",
+      senderUserId: game.user.id,
+      payload: {
+        card: {
+          name: String(card?.name || ""),
+          ability: String(card?.ability || ""),
+          abilityLabel: String(card?.abilityLabel || ""),
+          alignment: String(card?.alignment || ""),
+          alignmentLabel: String(card?.alignmentLabel || ""),
+          image: String(card?.image || ""),
+        },
+        actorContext: {
+          name: String(targetActorContext?.name || ""),
+          alignment: String(targetActorContext?.alignment || ""),
+          abilities: {
+            str: Number(targetActorContext?.abilities?.str || 0),
+            dex: Number(targetActorContext?.abilities?.dex || 0),
+            con: Number(targetActorContext?.abilities?.con || 0),
+            int: Number(targetActorContext?.abilities?.int || 0),
+            wis: Number(targetActorContext?.abilities?.wis || 0),
+            cha: Number(targetActorContext?.abilities?.cha || 0),
+          },
+        },
+      },
+    });
   }
 
   function applyDialogChrome(html) {
@@ -394,20 +463,26 @@
   }
 
   function bindDialogEvents(html) {
-    html.on("click", '[data-action="close"]', () => dialog.close());
     html.on("click", '[data-action="calculate"]', () => {
-      const result = calculateCardBonus(actor, drawnCard, actorAlignment);
       const overlay = html.find('[data-role="overlay"]');
+      if (overlay.hasClass("visible")) {
+        overlay.removeClass("visible");
+        return;
+      }
+      const result = calculateCardBonus(actorContext, drawnCard, actorAlignment);
       overlay.addClass("visible");
       html.find('[data-role="total-bonus"]').text(formatModifier(result.totalBonus));
       html.find('[data-role="breakdown"]').text(
         `${drawnCard.abilityLabel} ${formatModifier(result.abilityBonus)} • ${drawnCard.alignmentLabel} ${formatModifier(result.alignmentBonus)}`,
       );
+      html.find('[data-role="breakdown"]').text(
+        `${drawnCard.abilityLabel} ${formatModifier(result.abilityBonus)}\n${drawnCard.alignmentLabel} ${formatModifier(result.alignmentBonus)}`,
+      );
     });
   }
 
   function calculateCardBonus(targetActor, card, parsedAlignment) {
-    const abilityBonus = Number(getActorAbilityModifier(targetActor, card.ability) || 0);
+    const abilityBonus = Number(getAbilityModifier(targetActor, card.ability) || 0);
     const alignmentBonus = getAlignmentMatchBonus(parsedAlignment, parseAlignment(card.alignment));
     return {
       abilityBonus,
@@ -560,6 +635,61 @@
     if (explicit != null) return explicit;
     const score = parseNumericValue(ability?.total ?? ability?.value ?? ability?.score);
     return score == null ? null : Math.floor((score - 10) / 2);
+  }
+
+  function getAbilityModifier(target, abilityKey) {
+    const normalizedKey = normalizeAbilityKey(abilityKey);
+    if (!normalizedKey) return null;
+    if (target?.abilities && typeof target.abilities === "object") {
+      const value = Number(target.abilities[normalizedKey]);
+      return Number.isFinite(value) ? value : null;
+    }
+    return getActorAbilityModifier(target, normalizedKey);
+  }
+
+  function buildActorContext(targetActor) {
+    return {
+      name: String(targetActor?.name || game.user.name || "A character"),
+      alignment: String(getActorAlignmentValue(targetActor) || ""),
+      abilities: {
+        str: Number(getActorAbilityModifier(targetActor, "str") || 0),
+        dex: Number(getActorAbilityModifier(targetActor, "dex") || 0),
+        con: Number(getActorAbilityModifier(targetActor, "con") || 0),
+        int: Number(getActorAbilityModifier(targetActor, "int") || 0),
+        wis: Number(getActorAbilityModifier(targetActor, "wis") || 0),
+        cha: Number(getActorAbilityModifier(targetActor, "cha") || 0),
+      },
+    };
+  }
+
+  function normalizeBroadcastPayload(payload) {
+    if (!payload || typeof payload !== "object") return null;
+    const card = payload.card && typeof payload.card === "object" ? payload.card : null;
+    const actorContext = payload.actorContext && typeof payload.actorContext === "object" ? payload.actorContext : null;
+    if (!card || !actorContext) return null;
+    if (!card.name || !card.image) return null;
+    return {
+      card: {
+        name: String(card.name || ""),
+        ability: String(card.ability || ""),
+        abilityLabel: String(card.abilityLabel || ""),
+        alignment: String(card.alignment || ""),
+        alignmentLabel: String(card.alignmentLabel || ""),
+        image: String(card.image || ""),
+      },
+      actorContext: {
+        name: String(actorContext.name || ""),
+        alignment: String(actorContext.alignment || ""),
+        abilities: {
+          str: Number(actorContext?.abilities?.str || 0),
+          dex: Number(actorContext?.abilities?.dex || 0),
+          con: Number(actorContext?.abilities?.con || 0),
+          int: Number(actorContext?.abilities?.int || 0),
+          wis: Number(actorContext?.abilities?.wis || 0),
+          cha: Number(actorContext?.abilities?.cha || 0),
+        },
+      },
+    };
   }
 
   function parseNumericValue(value) {
