@@ -67,7 +67,8 @@ async function handleSocketMessage(message) {
 
   if (type === "request-show-dialog") {
     if (!game.user?.isGM) return;
-    const session = buildSessionPayload(message?.session);
+    const session = normalizeSession(message?.session)
+      || buildSessionPayload(message?.payload || message?.session?.payload || message?.session);
     if (!session) return;
     await setStoredFateCardSession(session);
     broadcastSessionToClients(session);
