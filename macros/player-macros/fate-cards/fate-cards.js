@@ -1,5 +1,5 @@
 (async () => {
-  const executionScope = scope && typeof scope === "object" ? scope : {};
+  const executionScope = typeof scope !== "undefined" && scope && typeof scope === "object" ? scope : {};
   const MODULE_ID = "darkfinder";
   const DIALOG_REGISTRY_KEY = "darkfinderFateCardsDialog";
   const SOCKET_NAME = `module.${MODULE_ID}`;
