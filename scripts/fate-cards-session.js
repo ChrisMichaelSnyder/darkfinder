@@ -200,6 +200,7 @@ function buildDialogContent(card) {
 
       .fate-cards-overlay.visible {
         opacity: 1;
+        pointer-events: auto;
       }
 
       .fate-cards-total {
@@ -232,6 +233,13 @@ function buildDialogContent(card) {
         font-size: 1rem;
         font-weight: 600;
         box-shadow: 0 10px 24px rgba(0, 0, 0, 0.34);
+      }
+
+      .fate-cards-overlay-meta {
+        position: absolute;
+        left: 50%;
+        bottom: 14px;
+        transform: translateX(-50%);
       }
 
       .fate-cards-footer {
@@ -272,10 +280,10 @@ function buildDialogContent(card) {
       <div class="fate-cards-panel">
         <div class="fate-cards-frame">
           <img class="fate-cards-image" src="${escapeHtml(card.image)}" alt="${escapeHtml(card.name)}">
-          <div class="fate-cards-chip fate-cards-chip--meta">${escapeHtml(card.abilityLabel)} • ${escapeHtml(card.alignmentLabel)}</div>
           <div class="fate-cards-overlay" data-role="overlay">
             <div class="fate-cards-total" data-role="total-bonus"></div>
             <div class="fate-cards-breakdown" data-role="breakdown"></div>
+            <div class="fate-cards-chip fate-cards-chip--meta fate-cards-overlay-meta">${escapeHtml(card.abilityLabel)} • ${escapeHtml(card.alignmentLabel)}</div>
           </div>
         </div>
       </div>
