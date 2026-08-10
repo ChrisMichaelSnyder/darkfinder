@@ -22,6 +22,13 @@ function createEntry({ id, name, relativePath, img, ownershipDefault }) {
 
 const playerMacros = [
   createEntry({
+    id: "dfMacroDash01",
+    name: "Macro Dashboard",
+    relativePath: "macros/player-macros/macro-dashboard/macro-dashboard.js",
+    img: "icons/svg/dice-target.svg",
+    ownershipDefault: 2,
+  }),
+  createEntry({
     id: "dfCarried001",
     name: "Carried Light",
     relativePath: "macros/player-macros/carried-light/carried-light.js",

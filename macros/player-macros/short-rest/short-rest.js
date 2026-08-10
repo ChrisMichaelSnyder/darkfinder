@@ -676,61 +676,102 @@
   return new Promise((resolve) => {
     const content = `
       <style>
-        /* Give the dialog room to breathe */
-        .app.window-app.dialog {
-          min-width: 640px;
-        }
-
         .sr-wrap {
-          padding: 20px 28px 26px 28px; /* top | right | bottom | left */
+          display: flex;
+          flex-direction: column;
+          gap: 0.85rem;
+          width: 100%;
+          min-height: 100%;
+          padding: 0;
+          box-sizing: border-box;
+          color: #eadfbe;
         }
 
-        /* 2x2 grid with more breathing room */
+        .sr-header {
+          flex: 0 0 auto;
+          padding: 0.15rem 0.1rem 0.5rem;
+          border-bottom: 1px solid rgba(142, 68, 58, 0.42);
+        }
+
+        .sr-title {
+          margin: 0;
+          font-size: 1.45rem;
+          line-height: 1.1;
+          color: #f4e9ca;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+        }
+
+        .sr-subtitle {
+          margin: 0.22rem 0 0;
+          color: rgba(239, 226, 191, 0.82);
+          font-size: 0.95rem;
+        }
+
+        .sr-grid-panel {
+          background:
+            radial-gradient(circle at top, rgba(116, 88, 50, 0.18), transparent 34%),
+            linear-gradient(180deg, rgba(59, 44, 29, 0.96), rgba(34, 25, 17, 0.98));
+          border: 1px solid rgba(188, 157, 103, 0.42);
+          border-radius: 12px;
+          box-shadow: inset 0 0 0 1px rgba(255, 241, 210, 0.05);
+          padding: 0.8rem;
+          box-sizing: border-box;
+          overflow: visible;
+          margin-bottom: 0.5rem;
+        }
+
         .sr-grid {
           display: grid;
           grid-template-columns: repeat(2, minmax(240px, 1fr));
-          gap: 26px;
-          justify-content: center;
+          gap: 16px;
           align-items: stretch;
-          padding: 14px 0 10px 0;
-          max-width: 640px;
-          margin: 0 auto;
+          width: 100%;
         }
 
-        /* Mobile fallback */
         @media (max-width: 700px) {
-          .app.window-app.dialog {
-            min-width: unset;
-          }
-
           .sr-grid {
             grid-template-columns: 1fr;
-            max-width: 420px;
           }
         }
 
         .sr-choice {
-          border: 1px solid rgba(255,255,255,0.22);
+          border: 1px solid rgba(138, 118, 81, 0.85);
           border-radius: 14px;
-          padding: 18px 16px;
+          padding: 16px 16px 14px;
           cursor: pointer;
           user-select: none;
           text-align: center;
-          background: rgba(255,255,255,0.02);
+          background:
+            linear-gradient(180deg, rgba(241, 225, 182, 0.34), rgba(176, 132, 68, 0.26)),
+            rgba(92, 69, 43, 0.9);
+          box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+          transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background 120ms ease;
+          min-height: 126px;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
         }
 
         .sr-choice:hover {
-          border-color: rgba(255,255,255,0.4);
-          box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+          transform: translateY(-1px);
+          border-color: rgba(140, 179, 112, 0.95);
+          background:
+            linear-gradient(180deg, rgba(223, 236, 188, 0.34), rgba(146, 190, 111, 0.26)),
+            rgba(98, 76, 48, 0.95);
+          box-shadow: 0 10px 24px rgba(0, 0, 0, 0.26);
         }
 
         .sr-choice input { display: none; }
 
         .sr-choice.selected {
-          border-color: rgba(255,255,255,0.6);
+          border-color: rgba(136, 185, 109, 0.98);
+          background:
+            linear-gradient(180deg, rgba(223, 236, 188, 0.36), rgba(146, 190, 111, 0.28)),
+            rgba(95, 75, 46, 0.98);
           box-shadow:
-            0 0 0 2px rgba(255,255,255,0.14) inset,
-            0 6px 18px rgba(0,0,0,0.45);
+            0 0 0 2px rgba(166, 205, 136, 0.16) inset,
+            0 12px 22px rgba(0,0,0,0.3);
         }
 
         .sr-row {
@@ -738,22 +779,24 @@
           align-items: center;
           justify-content: center;
           gap: 12px;
-          margin-bottom: 10px;
+          margin-bottom: 12px;
           font-weight: 800;
-          font-size: 1.05em;
+          font-size: 1.28em;
+          color: #f3e6c4;
         }
 
         .sr-sub {
-          opacity: 0.8;
-          font-size: 0.95em;
-          line-height: 1.35;
+          color: rgba(239, 226, 191, 0.8);
+          font-size: 1.03em;
+          line-height: 1.4;
           padding: 0 6px;
+          font-weight: 600;
         }
 
         /* Icons */
         .sr-heart {
-          width: 16px;
-          height: 14px;
+          width: 22px;
+          height: 19px;
           position: relative;
           transform: rotate(-45deg);
           background: #ff2d2d;
@@ -764,17 +807,17 @@
         .sr-heart:after {
           content: "";
           position: absolute;
-          width: 16px;
-          height: 14px;
+          width: 22px;
+          height: 19px;
           background: #ff2d2d;
           border-radius: 50%;
         }
-        .sr-heart:before { top: -8px; left: 0; }
-        .sr-heart:after  { top: 0; left: 8px; }
+        .sr-heart:before { top: -11px; left: 0; }
+        .sr-heart:after  { top: 0; left: 11px; }
 
         .sr-diamond {
-          width: 16px;
-          height: 16px;
+          width: 20px;
+          height: 20px;
           background: #2a7bff;
           transform: rotate(45deg);
           border-radius: 3px;
@@ -782,16 +825,16 @@
         }
 
         .sr-green {
-          width: 16px;
-          height: 16px;
+          width: 20px;
+          height: 20px;
           background: #18b83a;
           border-radius: 999px;
           box-shadow: 0 0 4px rgba(24,184,58,0.6);
         }
 
         .sr-purple {
-          width: 16px;
-          height: 16px;
+          width: 20px;
+          height: 20px;
           background: #8b3dff;
           border-radius: 999px;
           box-shadow: 0 0 4px rgba(139,61,255,0.65);
@@ -799,11 +842,13 @@
       </style>
 
       <div class="sr-wrap">
-        <form class="sr-form">
-          <div style="text-align:center; margin-bottom:16px; opacity:0.85; font-size:1.05em;">
+        <div class="sr-header">
+          <h2 class="sr-title">Short Rest Recovery</h2>
+          <div class="sr-subtitle">
             What are you recovering?
           </div>
-
+        </div>
+        <form class="sr-form sr-grid-panel">
           <div class="sr-grid">
             <label class="sr-choice" data-choice="hp">
               <input type="radio" name="pool" value="hp" />
@@ -860,9 +905,95 @@
       },
       default: "ok",
       render: (html) => {
+        const dialogWidth = 760;
+        const dialogHeight = 510;
+        dlg.setPosition({ width: dialogWidth, height: dialogHeight });
+        const appWindow = html.closest(".app.window-app");
+        const dialogWindow = html.closest(".app.window-app, .dialog");
+        let dialogContent = dialogWindow.find(".window-content");
+        if (!dialogContent.length) dialogContent = html;
+        const dialogButtons = dialogWindow.find(".dialog-buttons");
+
+        if (appWindow.length) {
+          appWindow.css({
+            width: `${dialogWidth}px`,
+            minWidth: `${dialogWidth}px`,
+            maxWidth: `${dialogWidth}px`,
+            height: `${dialogHeight}px`,
+            minHeight: `${dialogHeight}px`,
+            maxHeight: `${dialogHeight}px`,
+          });
+        }
+        dialogWindow.css({
+          width: `${dialogWidth}px`,
+          minWidth: `${dialogWidth}px`,
+          maxWidth: `${dialogWidth}px`,
+          height: `${dialogHeight}px`,
+          minHeight: `${dialogHeight}px`,
+          maxHeight: `${dialogHeight}px`,
+          display: "flex",
+          flexDirection: "column",
+          gap: "0.75rem",
+          padding: "0.75rem",
+          boxSizing: "border-box",
+          overflow: "hidden",
+          background:
+            "radial-gradient(circle at top, rgba(176, 146, 89, 0.24), transparent 30%), linear-gradient(180deg, #2f281f 0%, #1e1812 100%)",
+          border: "1px solid #6d5a39",
+          borderRadius: "12px",
+        });
+        dialogContent.css({
+          width: "100%",
+          height: "auto",
+          minHeight: "0",
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+          flex: "1 1 auto",
+          padding: "0",
+          boxSizing: "border-box",
+          minWidth: 0,
+          background: "transparent",
+          border: "0",
+          borderRadius: "0",
+        });
+        html.css({
+          width: "100%",
+          height: "auto",
+          minHeight: "0",
+          overflow: "visible",
+          minWidth: 0,
+        });
+        dialogButtons.css({
+          flex: "0 0 auto",
+          display: "grid",
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          gap: "0.6rem",
+          padding: "0",
+          margin: "0",
+          background: "transparent",
+          border: "0",
+          borderRadius: "0",
+          boxSizing: "border-box",
+        });
+
         const root = html[0];
         const okBtn = root.closest(".app")?.querySelector('button[data-button="ok"]');
+        const cancelBtn = root.closest(".app")?.querySelector('button[data-button="cancel"]');
         if (okBtn) okBtn.disabled = true;
+        [okBtn, cancelBtn].filter(Boolean).forEach((button) => {
+          button.style.borderRadius = "8px";
+          button.style.border = "1px solid #8a7651";
+          button.style.boxShadow = "0 6px 16px rgba(0, 0, 0, 0.24)";
+          button.style.fontWeight = "700";
+          button.style.minHeight = "2.6rem";
+          button.style.transition = "transform 120ms ease, box-shadow 120ms ease, filter 120ms ease";
+          button.style.color = "#2c2117";
+          button.style.background = "linear-gradient(180deg, #d8d2af 0%, #b3a06a 100%)";
+        });
+        if (cancelBtn) {
+          cancelBtn.style.background = "linear-gradient(180deg, #d9c08c 0%, #b0915d 100%)";
+        }
 
         const cards = root.querySelectorAll(".sr-choice");
         const radios = root.querySelectorAll('input[name="pool"]');
