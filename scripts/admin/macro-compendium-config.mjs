@@ -25,7 +25,7 @@ const playerMacros = [
     id: "dfMacroDash01",
     name: "Macro Dashboard",
     relativePath: "macros/player-macros/macro-dashboard/macro-dashboard.js",
-    img: "icons/svg/dice-target.svg",
+    img: "modules/darkfinder/assets/macro-icons/macro-dashboard.png",
     ownershipDefault: 2,
   }),
   createEntry({
